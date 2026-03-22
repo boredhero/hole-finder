@@ -9,13 +9,16 @@ from magic_eyes.detection.registry import PassRegistry
 
 
 @pytest.fixture(autouse=True)
-def clear_registry():
-    """Clear pass registry before each test to avoid cross-contamination."""
-    PassRegistry.clear()
-    # Re-import to re-register passes
-    import magic_eyes.detection.passes  # noqa: F401
+def ensure_passes_registered():
+    """Ensure all passes are registered before each test."""
+    import importlib
+    import magic_eyes.detection.passes as passes_mod
+    import magic_eyes.detection.passes.fill_difference as fd_mod
+
+    # Force re-registration if registry was cleared
+    importlib.reload(fd_mod)
+    importlib.reload(passes_mod)
     yield
-    PassRegistry.clear()
 
 
 @pytest.fixture

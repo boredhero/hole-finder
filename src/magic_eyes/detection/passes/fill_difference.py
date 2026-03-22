@@ -12,34 +12,38 @@ from magic_eyes.detection.registry import register_pass
 
 
 def _fill_depressions(dem: np.ndarray) -> np.ndarray:
-    """Fill all depressions in a DEM using a simple priority-flood algorithm.
+    """Fill all depressions in a DEM using priority-flood algorithm.
 
-    This produces a depression-free DEM where all local minima are filled
-    to their pour points.
+    Based on Barnes et al. (2014) priority-flood. Initializes all edge cells
+    in a min-heap, then floods inward, raising any cell lower than its
+    pour-point neighbor.
     """
-    from scipy.ndimage import maximum_filter
+    import heapq
 
+    rows, cols = dem.shape
     filled = dem.copy()
-    # Iterative filling: keep raising local minima until stable
-    for _ in range(500):
-        # Find pixels lower than all neighbors
-        local_max = maximum_filter(filled, size=3)
-        # Only raise interior pixels (not edges) that are lower than neighbors
-        mask = filled < local_max
-        # Don't raise edge pixels
-        mask[0, :] = False
-        mask[-1, :] = False
-        mask[:, 0] = False
-        mask[:, -1] = False
+    visited = np.zeros((rows, cols), dtype=bool)
+    heap: list[tuple[float, int, int]] = []
 
-        if not np.any(mask):
-            break
+    # Seed the heap with all border cells
+    for r in range(rows):
+        for c in range(cols):
+            if r == 0 or r == rows - 1 or c == 0 or c == cols - 1:
+                heapq.heappush(heap, (float(dem[r, c]), r, c))
+                visited[r, c] = True
 
-        # Raise depressed pixels to neighbor minimum pour level
-        from scipy.ndimage import minimum_filter
+    # 8-connected neighbors
+    neighbors = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
 
-        neighbor_min = minimum_filter(local_max, size=3)
-        filled[mask] = np.maximum(filled[mask], neighbor_min[mask])
+    while heap:
+        elev, r, c = heapq.heappop(heap)
+        for dr, dc in neighbors:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and not visited[nr, nc]:
+                visited[nr, nc] = True
+                if filled[nr, nc] < elev:
+                    filled[nr, nc] = elev
+                heapq.heappush(heap, (float(filled[nr, nc]), nr, nc))
 
     return filled
 
