@@ -1,0 +1,17 @@
+{
+  "type": "Feature",
+  "properties": {
+    "name": "Eastern Ohio",
+    "description": "Coal mine regions, western Ohio karst in Lockport Formation"
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[
+      [-84.5, 38.4],
+      [-80.5, 38.4],
+      [-80.5, 42.0],
+      [-84.5, 42.0],
+      [-84.5, 38.4]
+    ]]
+  }
+}

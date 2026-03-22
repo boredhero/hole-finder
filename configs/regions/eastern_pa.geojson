@@ -1,0 +1,17 @@
+{
+  "type": "Feature",
+  "properties": {
+    "name": "Eastern Pennsylvania",
+    "description": "Great Valley / Lehigh Valley karst, anthracite coal region"
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[
+      [-78.5, 39.7],
+      [-74.7, 39.7],
+      [-74.7, 41.5],
+      [-78.5, 41.5],
+      [-78.5, 39.7]
+    ]]
+  }
+}

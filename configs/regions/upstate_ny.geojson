@@ -1,0 +1,17 @@
+{
+  "type": "Feature",
+  "properties": {
+    "name": "Upstate New York",
+    "description": "Buffalo area, Lockport dolomite karst along Niagara Escarpment"
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[
+      [-79.8, 42.0],
+      [-74.0, 42.0],
+      [-74.0, 44.0],
+      [-79.8, 44.0],
+      [-79.8, 42.0]
+    ]]
+  }
+}

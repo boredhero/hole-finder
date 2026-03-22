@@ -1,0 +1,17 @@
+{
+  "type": "Feature",
+  "properties": {
+    "name": "Western Pennsylvania",
+    "description": "Allegheny Plateau karst region, bituminous coal belt"
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[
+      [-80.6, 39.7],
+      [-78.5, 39.7],
+      [-78.5, 41.5],
+      [-80.6, 41.5],
+      [-80.6, 39.7]
+    ]]
+  }
+}
