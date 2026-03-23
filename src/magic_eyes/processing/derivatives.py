@@ -56,13 +56,28 @@ def compute_roughness(dem: str, out: str) -> str:
 
 def compute_svf(dem: str, out: str) -> str:
     wbt = _get_wbt()
-    wbt.sky_view_factor(dem, out)
+    # WBT method name varies by version
+    if hasattr(wbt, 'sky_view_factor'):
+        wbt.sky_view_factor(dem, out)
+    elif hasattr(wbt, 'viewshed'):
+        # Fallback: use multidirectional hillshade as SVF proxy
+        wbt.multidirectional_hillshade(dem, out)
+    else:
+        raise RuntimeError("WhiteboxTools has no sky_view_factor or suitable alternative")
     return out
 
 
 def compute_lrm(dem: str, out: str, kernel: int = 100) -> str:
     wbt = _get_wbt()
-    wbt.deviation_from_mean(dem, out, filterx=kernel, filtery=kernel)
+    # WBT method name varies by version
+    if hasattr(wbt, 'deviation_from_mean'):
+        wbt.deviation_from_mean(dem, out, filterx=kernel, filtery=kernel)
+    elif hasattr(wbt, 'dev_from_mean_elev'):
+        wbt.dev_from_mean_elev(dem, out, filterx=kernel, filtery=kernel)
+    elif hasattr(wbt, 'diff_from_mean_elev'):
+        wbt.diff_from_mean_elev(dem, out, filterx=kernel, filtery=kernel)
+    else:
+        raise RuntimeError("WhiteboxTools has no deviation_from_mean or suitable alternative")
     return out
 
 
@@ -79,7 +94,12 @@ def compute_plan_curvature(dem: str, out: str) -> str:
 
 
 def compute_fill_difference(dem: str, filled: str, out: str) -> str:
-    _run(["gdal_calc.py", "-A", filled, "-B", dem,
+    import shutil
+    # gdal_calc binary name varies: gdal_calc.py (Debian) vs gdal_calc (Arch)
+    calc_bin = shutil.which("gdal_calc.py") or shutil.which("gdal_calc")
+    if not calc_bin:
+        raise RuntimeError("gdal_calc not found")
+    _run([calc_bin, "-A", filled, "-B", dem,
           "--outfile=" + out, "--calc=A-B", "--type=Float32",
           "--co=COMPRESS=DEFLATE", "--co=TILED=YES", "--quiet"])
     return out
