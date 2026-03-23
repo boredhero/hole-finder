@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import MapView from './components/Map/MapView';
-import Sidebar from './components/Sidebar/Sidebar';
+import { Routes, Route } from 'react-router-dom';
+import LandingPage from './pages/LandingPage';
+import PlaygroundPage from './pages/PlaygroundPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -14,15 +15,10 @@ const queryClient = new QueryClient({
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="relative h-full w-full">
-        {/* Map fills entire viewport */}
-        <div className="absolute inset-0">
-          <MapView />
-        </div>
-
-        {/* Sidebar overlays on left (desktop) or bottom (mobile) */}
-        <Sidebar />
-      </div>
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/playground" element={<PlaygroundPage />} />
+      </Routes>
     </QueryClientProvider>
   );
 }

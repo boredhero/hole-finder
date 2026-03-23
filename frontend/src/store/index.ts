@@ -1,6 +1,14 @@
 import { create } from 'zustand';
 import type { Basemap, Detection, DetectionFilters } from '../types';
 
+interface ViewState {
+  longitude: number;
+  latitude: number;
+  zoom: number;
+  pitch: number;
+  bearing: number;
+}
+
 interface AppState {
   // Map state
   basemap: Basemap;
@@ -14,7 +22,14 @@ interface AppState {
   terrainExaggeration: number;
   setTerrainExaggeration: (v: number) => void;
 
-  // Sidebar
+  // Map viewport persistence (survives route transitions)
+  viewState: ViewState | null;
+  setViewState: (v: ViewState) => void;
+  targetViewState: ViewState | null;
+  setTargetViewState: (v: ViewState) => void;
+  clearTargetViewState: () => void;
+
+  // Sidebar (playground)
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
   activePanel: 'filters' | 'detections' | 'jobs' | 'detail';
@@ -39,6 +54,12 @@ interface AppState {
   setDrawingAOI: (v: boolean) => void;
   drawnAOI: GeoJSON.Geometry | null;
   setDrawnAOI: (g: GeoJSON.Geometry | null) => void;
+
+  // Consumer explore view
+  userLocation: { lat: number; lon: number } | null;
+  setUserLocation: (loc: { lat: number; lon: number }) => void;
+  drawerState: 'collapsed' | 'expanded' | 'detail';
+  setDrawerState: (s: 'collapsed' | 'expanded' | 'detail') => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -52,6 +73,12 @@ export const useStore = create<AppState>((set) => ({
   toggle3DTerrain: () => set((s) => ({ show3DTerrain: !s.show3DTerrain })),
   terrainExaggeration: 1.5,
   setTerrainExaggeration: (v) => set({ terrainExaggeration: v }),
+
+  viewState: null,
+  setViewState: (v) => set({ viewState: v }),
+  targetViewState: null,
+  setTargetViewState: (v) => set({ targetViewState: v }),
+  clearTargetViewState: () => set({ targetViewState: null }),
 
   sidebarOpen: true,
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
@@ -77,4 +104,9 @@ export const useStore = create<AppState>((set) => ({
   setDrawingAOI: (v) => set({ drawingAOI: v }),
   drawnAOI: null,
   setDrawnAOI: (g) => set({ drawnAOI: g }),
+
+  userLocation: null,
+  setUserLocation: (loc) => set({ userLocation: loc }),
+  drawerState: 'collapsed',
+  setDrawerState: (s) => set({ drawerState: s }),
 }));

@@ -31,3 +31,11 @@ html, body, #root {
 .maplibregl-ctrl-attrib {
   font-size: 10px !important;
 }
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

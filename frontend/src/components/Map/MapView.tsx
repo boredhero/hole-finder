@@ -1,5 +1,5 @@
-import { useCallback, useMemo } from 'react';
-import Map, { NavigationControl, ScaleControl, GeolocateControl } from 'react-map-gl/maplibre';
+import { useCallback, useEffect, useMemo } from 'react';
+import Map, { NavigationControl, ScaleControl, GeolocateControl, useMap } from 'react-map-gl/maplibre';
 import { MapboxOverlay } from '@deck.gl/mapbox';
 import { ScatterplotLayer } from '@deck.gl/layers';
 import { HeatmapLayer } from '@deck.gl/aggregation-layers';
@@ -83,6 +83,29 @@ function DeckGLOverlay(props: { layers: any[] }) {
   return null;
 }
 
+function FlyToHandler() {
+  const { current: mapRef } = useMap();
+  const targetViewState = useStore((s) => s.targetViewState);
+  const clearTargetViewState = useStore((s) => s.clearTargetViewState);
+
+  useEffect(() => {
+    if (targetViewState && mapRef) {
+      mapRef.flyTo({
+        center: [targetViewState.longitude, targetViewState.latitude],
+        zoom: targetViewState.zoom,
+        pitch: targetViewState.pitch ?? 45,
+        bearing: targetViewState.bearing ?? -15,
+        duration: 2000,
+      });
+      clearTargetViewState();
+    }
+  }, [targetViewState, mapRef, clearTargetViewState]);
+
+  return null;
+}
+
+const DEFAULT_VIEW = { longitude: -79.71, latitude: 39.80, zoom: 13, pitch: 45, bearing: -15 };
+
 export default function MapView() {
   const basemap = useStore((s) => s.basemap);
   const showHeatmap = useStore((s) => s.showHeatmap);
@@ -96,14 +119,25 @@ export default function MapView() {
   const setSidebarOpen = useStore((s) => s.setSidebarOpen);
   const drawingAOI = useStore((s) => s.drawingAOI);
   const setDrawnAOI = useStore((s) => s.setDrawnAOI);
+  const storedViewState = useStore((s) => s.viewState);
+  const setViewState = useStore((s) => s.setViewState);
 
   const { data: detections = [] } = useDetections();
   const { data: groundTruth = [] } = useGroundTruth();
 
   const handleMoveEnd = useCallback((evt: any) => {
-    const bounds = evt.target.getBounds();
+    const map = evt.target;
+    const bounds = map.getBounds();
     setBbox([bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]);
-  }, [setBbox]);
+    const center = map.getCenter();
+    setViewState({
+      longitude: center.lng,
+      latitude: center.lat,
+      zoom: map.getZoom(),
+      pitch: map.getPitch(),
+      bearing: map.getBearing(),
+    });
+  }, [setBbox, setViewState]);
 
   const layers = useMemo(() => {
     const result: any[] = [];
@@ -187,13 +221,7 @@ export default function MapView() {
 
   return (
     <Map
-      initialViewState={{
-        longitude: -79.71,
-        latitude: 39.80,
-        zoom: 13,
-        pitch: 45,
-        bearing: -15,
-      }}
+      initialViewState={storedViewState ?? DEFAULT_VIEW}
       style={{ width: '100%', height: '100%' }}
       mapStyle={BASEMAP_STYLES[basemap] as any}
       onMoveEnd={handleMoveEnd}
@@ -217,6 +245,7 @@ export default function MapView() {
       cursor={hoveredId ? 'pointer' : 'grab'}
     >
       <DeckGLOverlay layers={layers} />
+      <FlyToHandler />
       <DrawControl
         active={drawingAOI}
         onDrawCreate={(geom) => setDrawnAOI(geom)}
