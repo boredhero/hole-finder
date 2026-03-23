@@ -1,47 +1,73 @@
 import { useEffect, useRef } from 'react';
-import MapboxDraw from '@mapbox/mapbox-gl-draw';
-import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
-import { useControl } from 'react-map-gl/maplibre';
+import { useMap } from 'react-map-gl/maplibre';
+import {
+  TerraDraw,
+  TerraDrawPolygonMode,
+  TerraDrawSelectMode,
+  TerraDrawRenderMode,
+} from 'terra-draw';
+import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 
 interface DrawControlProps {
+  active: boolean;
   onDrawCreate: (geometry: GeoJSON.Geometry) => void;
   onDrawDelete: () => void;
-  active: boolean;
 }
 
-export default function DrawControl({ onDrawCreate, onDrawDelete, active }: DrawControlProps) {
-  const drawRef = useRef<any>(null);
-
-  useControl(
-    () => {
-      const d = new MapboxDraw({
-        displayControlsDefault: false,
-        controls: { polygon: true, trash: true },
-        defaultMode: 'simple_select',
-      });
-      drawRef.current = d;
-      return d;
-    },
-    ({ map }) => {
-      map.on('draw.create', (e: any) => {
-        const feature = e.features?.[0];
-        if (feature?.geometry) {
-          onDrawCreate(feature.geometry);
-        }
-      });
-      map.on('draw.delete', () => onDrawDelete());
-    },
-    () => {},
-  );
+export default function DrawControl({ active, onDrawCreate, onDrawDelete }: DrawControlProps) {
+  const { current: mapRef } = useMap();
+  const drawRef = useRef<TerraDraw | null>(null);
 
   useEffect(() => {
-    if (drawRef.current) {
-      if (active) {
-        drawRef.current.changeMode('draw_polygon');
-      } else {
-        drawRef.current.changeMode('simple_select');
-        drawRef.current.deleteAll();
+    const map = mapRef?.getMap();
+    if (!map || drawRef.current) return;
+
+    const draw = new TerraDraw({
+      adapter: new TerraDrawMapLibreGLAdapter({ map }),
+      modes: [
+        new TerraDrawPolygonMode(),
+        new TerraDrawSelectMode({
+          flags: {
+            polygon: {
+              feature: {
+                draggable: true,
+                coordinates: { midpoints: { draggable: true }, draggable: true, deletable: true },
+              },
+            },
+          },
+        }),
+        new TerraDrawRenderMode({ modeName: 'static' } as any),
+      ],
+    });
+
+    draw.start();
+
+    draw.on('finish', (id) => {
+      const snapshot = draw.getSnapshot();
+      const feature = snapshot.find((f) => f.id === id);
+      if (feature?.geometry) {
+        onDrawCreate(feature.geometry);
       }
+    });
+
+    drawRef.current = draw;
+
+    return () => {
+      if (drawRef.current?.enabled) {
+        drawRef.current.stop();
+        drawRef.current = null;
+      }
+    };
+  }, [mapRef]);
+
+  useEffect(() => {
+    if (!drawRef.current) return;
+    if (active) {
+      drawRef.current.setMode('polygon');
+    } else {
+      drawRef.current.setMode('static');
+      drawRef.current.clear();
+      onDrawDelete();
     }
   }, [active]);
 
