@@ -29,9 +29,10 @@ def _fill_depressions(dem: np.ndarray) -> np.ndarray:
 def _fill_whitebox(dem: np.ndarray) -> np.ndarray:
     """Fill depressions using WhiteboxTools (compiled Rust, very fast)."""
     import tempfile
+
     import rasterio
-    from rasterio.transform import from_bounds
     import whitebox
+    from rasterio.transform import from_bounds
 
     wbt = whitebox.WhiteboxTools()
     wbt.set_verbose_mode(False)
@@ -85,8 +86,6 @@ def _fill_scipy(dem: np.ndarray) -> np.ndarray:
         marker = new_marker
 
     return marker
-
-    return filled
 
 
 @register_pass
