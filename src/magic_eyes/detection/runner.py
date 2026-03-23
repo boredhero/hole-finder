@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 import rasterio
 
-from magic_eyes.detection.base import Candidate, PassInput
+from magic_eyes.detection.base import Candidate, DetectionPass, PassInput
 from magic_eyes.detection.fusion import ResultFuser
 from magic_eyes.detection.registry import PassRegistry
 
@@ -78,14 +78,20 @@ class PassRunner:
         crs: int,
         derivatives: dict[str, np.ndarray] | None = None,
         point_cloud: Any | None = None,
+        parallel: bool = True,
     ) -> list[Candidate]:
-        """Run all passes on in-memory arrays and return fused candidates."""
+        """Run all passes on in-memory arrays and return fused candidates.
+
+        When parallel=True (default), runs independent passes concurrently
+        using a thread pool. Each pass is numpy/scipy-bound which releases
+        the GIL, so threads give real parallelism.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         if derivatives is None:
             derivatives = {}
 
-        # Run each pass
-        all_candidates: list[tuple[str, Candidate]] = []
-        for detection_pass in self.passes:
+        def _run_single_pass(detection_pass: DetectionPass) -> list[tuple[str, Candidate]]:
             pass_config = self.config.get(f"passes.{detection_pass.name}", {})
             pass_input = PassInput(
                 dem=dem,
@@ -95,14 +101,23 @@ class PassRunner:
                 point_cloud=point_cloud if detection_pass.requires_point_cloud else None,
                 config=pass_config,
             )
-
             try:
                 candidates = detection_pass.run(pass_input)
-                for candidate in candidates:
-                    all_candidates.append((detection_pass.name, candidate))
+                return [(detection_pass.name, c) for c in candidates]
             except Exception as e:
                 from magic_eyes.utils.logging import log
                 log.warning("pass_failed", pass_name=detection_pass.name, error=str(e))
+                return []
 
-        # Fuse results from multiple passes
+        all_candidates: list[tuple[str, Candidate]] = []
+
+        if parallel and len(self.passes) > 1:
+            with ThreadPoolExecutor(max_workers=min(len(self.passes), 8)) as executor:
+                futures = {executor.submit(_run_single_pass, p): p for p in self.passes}
+                for future in as_completed(futures):
+                    all_candidates.extend(future.result())
+        else:
+            for detection_pass in self.passes:
+                all_candidates.extend(_run_single_pass(detection_pass))
+
         return self.fuser.fuse(all_candidates)

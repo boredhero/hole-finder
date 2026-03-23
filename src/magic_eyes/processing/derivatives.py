@@ -283,27 +283,40 @@ def compute_all_derivatives(
     dem: NDArray[np.float32],
     resolution: float = 1.0,
 ) -> dict[str, NDArray[np.float32]]:
-    """Compute all terrain derivatives from a DEM.
+    """Compute all terrain derivatives from a DEM in parallel.
 
-    Returns a dict with all derivative names as keys.
+    Uses ThreadPoolExecutor — numpy/scipy release the GIL so threads
+    give real parallelism across all CPU cores.
     """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    # Define all independent computation tasks
+    tasks = {
+        "hillshade": lambda: compute_hillshade(dem, resolution),
+        "slope": lambda: compute_slope(dem, resolution),
+        "profile_curvature": lambda: compute_curvature(dem, resolution, "profile"),
+        "plan_curvature": lambda: compute_curvature(dem, resolution, "plan"),
+        "svf": lambda: compute_svf(dem, resolution, radius_m=30.0, n_directions=16),
+        "tpi_5m": lambda: compute_tpi(dem, max(1, int(5 / resolution))),
+        "tpi_15m": lambda: compute_tpi(dem, max(1, int(15 / resolution))),
+        "tpi_50m": lambda: compute_tpi(dem, max(1, int(50 / resolution))),
+        "lrm_50m": lambda: compute_lrm(dem, resolution, 50.0),
+        "lrm_100m": lambda: compute_lrm(dem, resolution, 100.0),
+        "lrm_200m": lambda: compute_lrm(dem, resolution, 200.0),
+        "fill_difference": lambda: compute_fill_difference(dem),
+    }
+
     derivatives: dict[str, NDArray[np.float32]] = {}
 
-    derivatives["hillshade"] = compute_hillshade(dem, resolution)
-    derivatives["slope"] = compute_slope(dem, resolution)
-    derivatives["profile_curvature"] = compute_curvature(dem, resolution, "profile")
-    derivatives["plan_curvature"] = compute_curvature(dem, resolution, "plan")
-    derivatives["svf"] = compute_svf(dem, resolution, radius_m=30.0, n_directions=16)
-
-    # Multi-scale TPI
-    for key, arr in compute_tpi_multiscale(dem, resolution).items():
-        derivatives[key] = arr
-
-    # Multi-scale LRM
-    for key, arr in compute_lrm_multiscale(dem, resolution).items():
-        derivatives[key] = arr
-
-    # Fill-difference
-    derivatives["fill_difference"] = compute_fill_difference(dem)
+    with ThreadPoolExecutor(max_workers=min(len(tasks), 8)) as executor:
+        futures = {executor.submit(fn): name for name, fn in tasks.items()}
+        for future in as_completed(futures):
+            name = futures[future]
+            try:
+                derivatives[name] = future.result()
+            except Exception as e:
+                # Non-fatal: skip failed derivatives
+                import structlog
+                structlog.get_logger().warning("derivative_failed", name=name, error=str(e))
 
     return derivatives
