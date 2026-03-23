@@ -34,6 +34,8 @@ class TPIPass(DetectionPass):
         if tpi is None:
             return []
 
+        # Mask nodata (GDAL TPI outputs -9999 on edges)
+        tpi = np.where(np.isfinite(tpi) & (tpi > -9000), tpi, 0)
         depression_mask = tpi < threshold
         if not np.any(depression_mask):
             return []
