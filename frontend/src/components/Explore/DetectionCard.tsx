@@ -97,7 +97,7 @@ export default function DetectionCard({ detection: d, compact, userLocation, sel
           href={mapsUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="ml-auto flex items-center gap-1 bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1 rounded transition-colors"
+          className="ml-auto flex items-center gap-1 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded transition-colors"
         >
           <ExternalLink size={11} />
           Open in Maps

@@ -82,19 +82,19 @@ export default function DetailPanel() {
         <textarea
           value={notes} onChange={(e) => setNotes(e.target.value)}
           placeholder="Notes (optional)..."
-          className="w-full bg-slate-800 border border-slate-600 rounded text-sm p-3 text-slate-200 resize-none h-20 mb-3"
+          className="w-full bg-slate-800 border border-slate-600 rounded text-sm p-3 text-slate-200 resize-none h-24 mb-4"
         />
-        <div className="flex gap-2.5">
+        <div className="flex gap-3">
           <button onClick={() => validate.mutate('confirmed')}
-            className="flex-1 flex items-center justify-center gap-2 bg-green-700 hover:bg-green-600 text-white text-sm py-2.5 rounded transition-colors font-medium">
+            className="flex-1 flex items-center justify-center gap-2 bg-green-700 hover:bg-green-600 text-white text-sm py-3 px-4 rounded transition-colors font-medium">
             <CheckCircle size={16} /> Confirm
           </button>
           <button onClick={() => validate.mutate('rejected')}
-            className="flex-1 flex items-center justify-center gap-2 bg-red-700 hover:bg-red-600 text-white text-sm py-2.5 rounded transition-colors font-medium">
+            className="flex-1 flex items-center justify-center gap-2 bg-red-700 hover:bg-red-600 text-white text-sm py-3 px-4 rounded transition-colors font-medium">
             <XCircle size={16} /> Reject
           </button>
           <button onClick={() => validate.mutate('uncertain')}
-            className="flex-1 flex items-center justify-center gap-2 bg-slate-600 hover:bg-slate-500 text-white text-sm py-2.5 rounded transition-colors font-medium">
+            className="flex-1 flex items-center justify-center gap-2 bg-slate-600 hover:bg-slate-500 text-white text-sm py-3 px-4 rounded transition-colors font-medium">
             <HelpCircle size={16} /> Unsure
           </button>
         </div>
@@ -110,7 +110,7 @@ export default function DetailPanel() {
               body: JSON.stringify({ label: 'Interesting', color: '#f59e0b' }),
             }).then(() => qc.invalidateQueries({ queryKey: ['saved'] }));
           }}
-          className="w-full flex items-center justify-center gap-2 bg-amber-700 hover:bg-amber-600 text-white text-sm py-2.5 rounded transition-colors font-medium">
+          className="w-full flex items-center justify-center gap-2 bg-amber-700 hover:bg-amber-600 text-white text-sm py-3 px-4 rounded transition-colors font-medium">
           <Bookmark size={16} /> Save Detection
         </button>
       </section>
@@ -161,14 +161,14 @@ function CommentsSection({ detectionId }: { detectionId: string }) {
         </div>
       ))}
 
-      <div className="flex gap-2 mt-3">
+      <div className="flex gap-3 mt-3">
         <input value={author} onChange={(e) => setAuthor(e.target.value)}
-          placeholder="Name" className="w-20 bg-slate-800 border border-slate-600 rounded text-sm p-2.5 text-slate-200" />
+          placeholder="Name" className="w-24 bg-slate-800 border border-slate-600 rounded text-sm py-3 px-3 text-slate-200" />
         <input value={text} onChange={(e) => setText(e.target.value)}
-          placeholder="Add comment..." className="flex-1 bg-slate-800 border border-slate-600 rounded text-sm p-2.5 text-slate-200"
+          placeholder="Add comment..." className="flex-1 bg-slate-800 border border-slate-600 rounded text-sm py-3 px-3 text-slate-200"
           onKeyDown={(e) => e.key === 'Enter' && text && addComment.mutate()} />
         <button onClick={() => text && addComment.mutate()} disabled={!text}
-          className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-3 rounded">
+          className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-3 rounded flex-shrink-0">
           <Send size={16} />
         </button>
       </div>

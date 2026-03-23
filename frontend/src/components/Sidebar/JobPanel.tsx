@@ -64,17 +64,17 @@ export default function JobPanel() {
       <section>
         <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">New Job</h3>
 
-        <div className="flex gap-1.5 mb-3">
+        <div className="flex gap-2 mb-4">
           <button onClick={() => { setInputMode('region'); setDrawingAOI(false); }}
-            className={`flex-1 text-sm py-2 rounded font-medium transition-colors ${inputMode === 'region' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
+            className={`flex-1 text-sm py-3 px-3 rounded font-medium transition-colors ${inputMode === 'region' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
             Region
           </button>
           <button onClick={() => { setInputMode('pin'); setDrawingAOI(false); }}
-            className={`flex-1 text-sm py-2 rounded font-medium flex items-center justify-center gap-1.5 transition-colors ${inputMode === 'pin' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
+            className={`flex-1 text-sm py-3 px-3 rounded font-medium flex items-center justify-center gap-1.5 transition-colors ${inputMode === 'pin' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
             <MapPin size={14} /> Pin
           </button>
           <button onClick={() => { setInputMode('draw'); setDrawingAOI(true); }}
-            className={`flex-1 text-sm py-2 rounded font-medium flex items-center justify-center gap-1.5 transition-colors ${inputMode === 'draw' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
+            className={`flex-1 text-sm py-3 px-3 rounded font-medium flex items-center justify-center gap-1.5 transition-colors ${inputMode === 'draw' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
             <PenTool size={14} /> Draw
           </button>
         </div>
@@ -132,7 +132,7 @@ export default function JobPanel() {
             setDrawingAOI(false);
           }}
           disabled={createJob.isPending || (inputMode === 'draw' && !drawnAOI) || (inputMode === 'pin' && (!pinLat || !pinLon))}
-          className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium py-3 rounded transition-colors">
+          className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium py-3.5 px-4 rounded transition-colors">
           {createJob.isPending ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} />}
           Submit Job
         </button>
@@ -183,7 +183,7 @@ function StatusBadge({ status }: { status: string }) {
   const c = config[status] || config.CANCELLED;
   const Icon = c.icon;
   return (
-    <span className={`text-sm px-2.5 py-1 rounded border flex items-center gap-1.5 ${c.bg}`}>
+    <span className={`text-sm px-3 py-1.5 rounded border flex items-center gap-1.5 ${c.bg}`}>
       <Icon size={13} className={status === 'RUNNING' ? 'animate-spin' : ''} />
       {status}
     </span>

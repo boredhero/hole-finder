@@ -11,7 +11,7 @@ export default function SearchButton() {
   return (
     <button
       onClick={() => setSearchBbox(bbox)}
-      className="fixed top-16 left-1/2 -translate-x-1/2 z-30 bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm px-5 py-2.5 rounded shadow-lg flex items-center gap-2 transition-all animate-in fade-in"
+      className="fixed top-16 left-1/2 -translate-x-1/2 z-30 bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm px-6 py-3 rounded shadow-lg flex items-center gap-2 transition-all animate-in fade-in"
     >
       <Search size={16} />
       Search this area

@@ -39,7 +39,7 @@ export default function FilterPanel() {
         <div className="flex gap-1.5">
           {BASEMAPS.map(b => (
             <button key={b.value} onClick={() => setBasemap(b.value)}
-              className={`flex-1 text-sm py-2 rounded transition-colors font-medium ${basemap === b.value ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
+              className={`flex-1 text-sm py-3 px-3 rounded transition-colors font-medium ${basemap === b.value ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
               {b.label}
             </button>
           ))}

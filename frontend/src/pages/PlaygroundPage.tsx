@@ -12,7 +12,7 @@ export default function PlaygroundPage() {
       <Sidebar />
       <Link
         to="/"
-        className="fixed top-4 right-4 z-50 bg-slate-800/90 backdrop-blur px-4 py-2.5 rounded shadow-lg text-sm text-slate-300 hover:text-white flex items-center gap-2 transition-colors"
+        className="fixed top-4 right-4 z-50 bg-slate-800/90 backdrop-blur px-5 py-3 rounded shadow-lg text-sm text-slate-300 hover:text-white flex items-center gap-2 transition-colors"
       >
         <ArrowLeft size={16} />
         Back to Explore
