@@ -1,46 +1,42 @@
-"""Zip code geocoding proxy — avoids CORS issues with Census geocoder."""
+"""Zip code geocoding proxy — avoids CORS issues with external API."""
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 
 router = APIRouter(tags=["geocode"])
 
-CENSUS_URL = "https://geocoding.geo.census.gov/geocoder/locations/address"
+ZIPPOPOTAM_URL = "https://api.zippopotam.us/us"
 
 
 @router.get("/geocode")
 async def geocode_zip(
     zip: str = Query(..., min_length=5, max_length=5, pattern=r"^\d{5}$"),
 ):
-    """Geocode a US zip code via the Census Bureau geocoder.
+    """Geocode a US zip code via Zippopotam.us.
 
     Returns lat/lon coordinates for the zip code centroid.
-    Free API, no auth required.
+    Free API, no auth required, no rate limits.
     """
-    params = {
-        "zip": zip,
-        "benchmark": "Public_AR_Current",
-        "format": "json",
-    }
-
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            resp = await client.get(CENSUS_URL, params=params)
-            resp.raise_for_status()
+            resp = await client.get(f"{ZIPPOPOTAM_URL}/{zip}")
         except httpx.HTTPError:
-            raise HTTPException(status_code=502, detail="Census geocoder unavailable")
+            raise HTTPException(status_code=502, detail="Geocoding service unavailable")
+
+    if resp.status_code == 404:
+        raise HTTPException(status_code=404, detail="Invalid or unrecognized zip code")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="Geocoding service error")
 
     data = resp.json()
-    matches = data.get("result", {}).get("addressMatches", [])
-    if not matches:
+    places = data.get("places", [])
+    if not places:
         raise HTTPException(status_code=404, detail="Invalid or unrecognized zip code")
 
-    coords = matches[0].get("coordinates", {})
-    address = matches[0].get("addressComponents", {})
-
+    place = places[0]
     return {
-        "lat": coords.get("y"),
-        "lon": coords.get("x"),
-        "city": address.get("city", ""),
-        "state": address.get("state", ""),
+        "lat": float(place["latitude"]),
+        "lon": float(place["longitude"]),
+        "city": place.get("place name", ""),
+        "state": place.get("state abbreviation", ""),
     }
