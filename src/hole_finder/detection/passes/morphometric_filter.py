@@ -70,19 +70,19 @@ class MorphometricFilterPass(DetectionPass):
             & (metrics["depth_m"] >= min_depth_m)
         )
 
-        # Pre-compute outline polygons for all valid regions
+        # Vectorize outlines for valid regions only
+        valid_set = set(np.flatnonzero(valid).tolist())
+        valid_labels = set(idx + 1 for idx in valid_set)
+        masked_labeled = np.where(np.isin(labeled, list(valid_labels)), labeled, 0).astype(np.int32)
+
         outlines: dict[int, object] = {}
-        try:
-            for geom_dict, value in rasterio_shapes(
-                labeled.astype(np.int32),
-                mask=(labeled > 0),
-                transform=input_data.transform,
-            ):
-                arr_idx = int(value) - 1  # label IDs are 1-indexed
-                if arr_idx in np.flatnonzero(valid):
-                    outlines[arr_idx] = shape(geom_dict)
-        except Exception:
-            pass  # outline extraction is best-effort
+        for geom_dict, value in rasterio_shapes(
+            masked_labeled,
+            mask=(masked_labeled > 0),
+            transform=input_data.transform,
+        ):
+            arr_idx = int(value) - 1
+            outlines[arr_idx] = shape(geom_dict)
 
         candidates = []
         for idx in np.flatnonzero(valid):

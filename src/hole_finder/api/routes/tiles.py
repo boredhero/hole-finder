@@ -73,8 +73,8 @@ async def get_vector_tile(
             LIMIT 100000
         )
         SELECT
-            (SELECT ST_AsMVT(tile_data, 'detections', 4096, 'geom') FROM tile_data)
-            || (SELECT ST_AsMVT(outline_data, 'outlines', 4096, 'geom') FROM outline_data)
+            COALESCE((SELECT ST_AsMVT(tile_data, 'detections', 4096, 'geom') FROM tile_data), ''::bytea)
+            || COALESCE((SELECT ST_AsMVT(outline_data, 'outlines', 4096, 'geom') FROM outline_data), ''::bytea)
         AS mvt
     """)
 

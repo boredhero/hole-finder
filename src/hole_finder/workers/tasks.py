@@ -38,7 +38,8 @@ def _transform_outline(outline, transformer):
         return None
     try:
         return shapely_transform(lambda x, y: transformer.transform(x, y), outline)
-    except Exception:
+    except Exception as e:
+        log.warning("outline_transform_failed", error=str(e))
         return None
 
 

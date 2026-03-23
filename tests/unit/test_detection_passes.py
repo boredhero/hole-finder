@@ -314,3 +314,75 @@ class TestPassRunnerToml:
             runner = PassRunner.from_toml(Path("configs/passes/sinkhole_survey.toml"))
             runner.fuser.min_confidence = 0.5  # higher threshold for near-flat terrain
             assert len(runner.run_on_array(inp.dem, inp.transform, inp.crs, inp.derivatives)) == 0
+
+
+class TestOutlineExtraction:
+    """Standalone tests for outline vectorization — no GDAL/WBT required."""
+
+    def test_rasterio_shapes_produces_valid_polygons(self):
+        """rasterio.features.shapes correctly vectorizes labeled regions into Shapely Polygons."""
+        from rasterio.features import shapes as rasterio_shapes
+        from rasterio.transform import from_bounds
+        from shapely.geometry import shape as shapely_shape
+
+        # Simulate a labeled array with two depression regions
+        labeled = np.zeros((100, 100), dtype=np.int32)
+        labeled[20:40, 20:40] = 1  # square region
+        labeled[60:80, 50:90] = 2  # rectangular region
+
+        transform = from_bounds(-79.80, 40.40, -79.70, 40.50, 100, 100)
+
+        outlines = {}
+        for geom_dict, value in rasterio_shapes(labeled, mask=(labeled > 0), transform=transform):
+            outlines[int(value)] = shapely_shape(geom_dict)
+
+        assert len(outlines) == 2
+        assert outlines[1].geom_type == "Polygon"
+        assert outlines[2].geom_type == "Polygon"
+
+        # Square region should be roughly square
+        bounds1 = outlines[1].bounds
+        width1 = bounds1[2] - bounds1[0]
+        height1 = bounds1[3] - bounds1[1]
+        assert abs(width1 - height1) < 0.005  # approximately square
+
+        # Rectangular region should be wider than tall
+        bounds2 = outlines[2].bounds
+        width2 = bounds2[2] - bounds2[0]
+        height2 = bounds2[3] - bounds2[1]
+        assert width2 > height2
+
+        # Both should have valid area
+        assert outlines[1].area > 0
+        assert outlines[2].area > 0
+
+    def test_outline_crs_transform_utm_to_wgs84(self):
+        """Outline polygons correctly transform from UTM to WGS84 coordinates."""
+        from pyproj import Transformer
+        from shapely.geometry import Polygon
+        from shapely.ops import transform as shapely_transform
+
+        # A 100m x 100m square in UTM zone 17N (typical for western PA)
+        poly_utm = Polygon([
+            (580000, 4475000),
+            (580100, 4475000),
+            (580100, 4475100),
+            (580000, 4475100),
+        ])
+
+        transformer = Transformer.from_crs("EPSG:32617", "EPSG:4326", always_xy=True)
+        poly_wgs = shapely_transform(lambda x, y: transformer.transform(x, y), poly_utm)
+
+        assert poly_wgs.geom_type == "Polygon"
+        assert poly_wgs.is_valid
+
+        # Should be in WGS84 range (western PA is around -80, 40)
+        bounds = poly_wgs.bounds
+        assert -81 < bounds[0] < -79  # lon
+        assert 40 < bounds[1] < 41    # lat
+        assert -81 < bounds[2] < -79
+        assert 40 < bounds[3] < 41
+
+        # Area should be tiny in degrees (100m square ≈ 0.000001 deg²)
+        assert poly_wgs.area < 0.0001
+        assert poly_wgs.area > 0
