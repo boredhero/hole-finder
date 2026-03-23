@@ -76,9 +76,23 @@ async def create_job(
     await db.commit()
     await db.refresh(job)
 
-    # Submit to Celery (fire-and-forget — job status tracked in DB)
+    # Submit to Celery
     try:
-        job.celery_task_id = f"job-{job.id}"
+        from hole_finder.workers.tasks import run_full_pipeline
+
+        bbox_geojson = None
+        if body.bbox:
+            from shapely.geometry import mapping, shape
+            bbox_geojson = body.bbox
+
+        task = run_full_pipeline.delay(
+            job_id=str(job.id),
+            region_name=body.region_name,
+            pass_config=body.pass_config,
+            bbox_geojson=bbox_geojson,
+        )
+        job.celery_task_id = task.id
+        job.status = JobStatusEnum.RUNNING
         await db.commit()
     except Exception:
         pass  # Celery not running is non-fatal for job creation
