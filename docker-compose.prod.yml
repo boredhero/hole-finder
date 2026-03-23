@@ -1,18 +1,63 @@
-# Production compose for gateway node (192.168.1.69)
-# DB + Redis live on compute node (192.168.1.111) — see docker-compose.yml
+# Production compose — runs on compute node (192.168.1.111)
+# ALL services here: DB, Redis, API, Celery workers, autoheal
+# .69 is ONLY an nginx reverse proxy pointing to .111:8000
+
 services:
-  anomalies-api:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: magic-eyes-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: magic_eyes
+      POSTGRES_USER: magic_eyes
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    ports:
+      - "0.0.0.0:5432:5432"
+    volumes:
+      - magic_eyes_pgdata:/var/lib/postgresql/data
+    command:
+      - postgres
+      - -c
+      - shared_buffers=4GB
+      - -c
+      - work_mem=256MB
+      - -c
+      - effective_cache_size=48GB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U magic_eyes"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: magic-eyes-redis
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:6379:6379"
+    volumes:
+      - magic_eyes_redis:/data
+    command: redis-server --maxmemory 2gb --maxmemory-policy allkeys-lru
+
+  api:
     image: ghcr.io/boredhero/anomalies-browser:latest
     container_name: magic-eyes-api
     restart: unless-stopped
-    network_mode: host
+    ports:
+      - "0.0.0.0:9747:8000"
     environment:
-      DATABASE_URL: postgresql+asyncpg://magic_eyes:${POSTGRES_PASSWORD:-changeme}@192.168.1.111:5432/magic_eyes
-      REDIS_URL: redis://192.168.1.111:6379/0
+      DATABASE_URL: postgresql+asyncpg://magic_eyes:${POSTGRES_PASSWORD:-changeme}@db:5432/magic_eyes
+      REDIS_URL: redis://redis:6379/0
       DATA_DIR: /data/magic-eyes
     volumes:
       - ./configs:/app/configs:ro
       - magic_eyes_logs:/app/logs
+      - magic_eyes_data:/data/magic-eyes
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8000/api/health"]
       interval: 30s
@@ -22,6 +67,54 @@ services:
     labels:
       - "autoheal=true"
 
+  celery-worker:
+    image: ghcr.io/boredhero/anomalies-browser:latest
+    container_name: magic-eyes-worker
+    restart: unless-stopped
+    command: ["uv", "run", "celery", "-A", "magic_eyes.workers.celery_app", "worker",
+              "--loglevel=info", "--concurrency=4",
+              "-Q", "default,ingest,process,detect"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://magic_eyes:${POSTGRES_PASSWORD:-changeme}@db:5432/magic_eyes
+      REDIS_URL: redis://redis:6379/0
+      DATA_DIR: /data/magic-eyes
+    volumes:
+      - ./configs:/app/configs:ro
+      - magic_eyes_logs:/app/logs
+      - magic_eyes_data:/data/magic-eyes
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  celery-gpu:
+    image: ghcr.io/boredhero/anomalies-browser:latest
+    container_name: magic-eyes-gpu-worker
+    restart: unless-stopped
+    command: ["uv", "run", "celery", "-A", "magic_eyes.workers.celery_app", "worker",
+              "--loglevel=info", "--concurrency=1", "-Q", "gpu"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://magic_eyes:${POSTGRES_PASSWORD:-changeme}@db:5432/magic_eyes
+      REDIS_URL: redis://redis:6379/0
+      DATA_DIR: /data/magic-eyes
+      HSA_OVERRIDE_GFX_VERSION: "10.3.0"
+    volumes:
+      - ./configs:/app/configs:ro
+      - magic_eyes_logs:/app/logs
+      - magic_eyes_data:/data/magic-eyes
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - "985"
+      - "989"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
   autoheal:
     image: willfarrell/autoheal
     container_name: magic-eyes-autoheal
@@ -30,4 +123,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
+  magic_eyes_pgdata:
+  magic_eyes_redis:
   magic_eyes_logs:
+  magic_eyes_data:

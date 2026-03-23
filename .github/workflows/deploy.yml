@@ -50,40 +50,61 @@ jobs:
             ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ github.sha }}
 
-      # --- Deploy to gateway (.69) ---
-      - name: Copy configs to gateway
+      # --- Stage files on jumpbox (.69) then forward to .111 ---
+      - name: Stage deploy files on jumpbox
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          source: "docker-compose.prod.yml,configs/"
-          target: ~/anomalies-browser/
+          source: "docker-compose.prod.yml,configs/,nginx/"
+          target: /tmp/anomalies-deploy/
 
-      - name: Deploy API on gateway
+      # --- Deploy everything to .111 via jumpbox ---
+      - name: Deploy to compute node
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
-            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u boredhero --password-stdin
-            docker pull ghcr.io/${{ github.repository }}:latest
-            cd ~/anomalies-browser
-            cp docker-compose.prod.yml docker-compose.yml
-            docker compose up -d --force-recreate anomalies-api autoheal
-            echo "[gateway] API deployed $(date)"
+            set -e
+            COMPUTE=noah@192.168.1.111
+            SSH_OPTS="-o ConnectTimeout=15 -o StrictHostKeyChecking=no"
 
-      # --- Ensure DB + Redis on compute node (.111 via jumpbox) ---
-      - name: Ensure compute node services
-        uses: appleboy/ssh-action@v1
-        continue-on-error: true
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: |
-            ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no noah@192.168.1.111 '
-              cd ~/magic-eyes-docker && docker compose up -d
-              echo "[compute] DB+Redis verified $(date)"
-            ' || echo "[compute] Unreachable — non-fatal, skipping"
+            # Create dirs on .111
+            ssh $SSH_OPTS $COMPUTE 'mkdir -p ~/anomalies-browser/configs/passes ~/anomalies-browser/configs/regions'
+
+            # Copy compose + configs to .111
+            scp $SSH_OPTS /tmp/anomalies-deploy/docker-compose.prod.yml $COMPUTE:~/anomalies-browser/docker-compose.yml
+            scp -r $SSH_OPTS /tmp/anomalies-deploy/configs/* $COMPUTE:~/anomalies-browser/configs/
+
+            # Pull image and deploy all services on .111
+            ssh $SSH_OPTS $COMPUTE "
+              echo '${{ secrets.GHCR_TOKEN }}' | docker login ghcr.io -u boredhero --password-stdin
+              docker pull ghcr.io/boredhero/anomalies-browser:latest
+              cd ~/anomalies-browser
+              docker compose up -d --force-recreate --remove-orphans
+              echo '--- Container status ---'
+              docker compose ps
+              echo '[compute] Deployed $(date)'
+            "
+
+            # Update nginx proxy config on .69
+            sudo cp /tmp/anomalies-deploy/nginx/anomalies.martinospizza.dev /etc/nginx/sites-available/anomalies.martinospizza.dev
+            sudo ln -sf /etc/nginx/sites-available/anomalies.martinospizza.dev /etc/nginx/sites-enabled/
+            sudo nginx -t && sudo systemctl reload nginx
+
+            # Wait for API to come up, then verify
+            echo "Waiting for API on .111:9747..."
+            for i in 1 2 3 4 5 6; do
+              if curl -sf http://192.168.1.111:9747/api/health; then
+                echo ""
+                echo "[deploy] API healthy!"
+                break
+              fi
+              sleep 10
+            done
+
+            # Clean up staging files
+            rm -rf /tmp/anomalies-deploy
