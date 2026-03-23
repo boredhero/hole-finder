@@ -2,8 +2,6 @@ import { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import MapView from '../components/Map/MapView';
 import TopBar from '../components/Explore/TopBar';
-import BottomDrawer from '../components/Explore/BottomDrawer';
-import SearchButton from '../components/Explore/SearchButton';
 import SettingsPanel from '../components/Explore/SettingsPanel';
 import ProcessingScreen from '../components/Explore/ProcessingScreen';
 import ResultsSplash from '../components/Explore/ResultsSplash';
@@ -13,7 +11,7 @@ import { useJobProgress } from '../hooks/useJobProgress';
 import { useStore } from '../store';
 import { geocodeZip, getDetections, startConsumerScan } from '../api/client';
 import { geometryToBbox, formatRegionName } from '../utils';
-import { Locate, Map as MapIcon, ArrowLeft, Settings2, Loader2, AlertCircle } from 'lucide-react';
+import { Locate, Map as MapIcon, Search, ArrowLeft, Settings2, Loader2, AlertCircle } from 'lucide-react';
 import type { Detection } from '../types';
 
 type Phase = 'splash' | 'regionPicker' | 'processing' | 'results' | 'tour' | 'explore';
@@ -250,8 +248,9 @@ export default function LandingPage() {
     );
   }
 
-  // Explore phase
+  // Explore phase — swiper replaces bottom drawer
   if (phase === 'explore') {
+    const currentTourDetection = tourDetections[tourIndex];
     return (
       <div className="relative h-full w-full">
         <div className="absolute inset-0">
@@ -259,8 +258,28 @@ export default function LandingPage() {
         </div>
         <TopBar />
         <SettingsPanel />
-        <SearchButton />
-        <BottomDrawer />
+        <ExploreSearchButton
+          onResults={(dets) => {
+            setTourDetections(dets);
+            setTourIndex(0);
+            if (dets.length > 0) {
+              const best = dets[0];
+              setTargetViewState({ longitude: best.lon, latitude: best.lat, zoom: 15, pitch: 45, bearing: -15 });
+            }
+          }}
+        />
+        {currentTourDetection && (
+          <SwipeCard
+            detection={currentTourDetection}
+            userLocation={userLocation}
+            currentIndex={tourIndex}
+            totalCount={tourDetections.length}
+            direction={swipeDirection}
+            onNext={handleTourNext}
+            onPrev={handleTourPrev}
+            onExit={() => { setTourDetections([]); setTourIndex(0); }}
+          />
+        )}
       </div>
     );
   }
@@ -345,6 +364,49 @@ export default function LandingPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+/** Floating search button that fetches detections into the swiper */
+function ExploreSearchButton({ onResults }: { onResults: (dets: Detection[]) => void }) {
+  const searchStale = useStore((s) => s.searchStale);
+  const bbox = useStore((s) => s.bbox);
+  const setSearchStale = useStore((s) => s.setSearchStale);
+  const [loading, setLoading] = useState(false);
+
+  if (!searchStale || !bbox) return null;
+
+  const handleSearch = async () => {
+    setLoading(true);
+    setSearchStale(false);
+    try {
+      const data = await getDetections({
+        west: bbox[0], south: bbox[1], east: bbox[2], north: bbox[3],
+        min_confidence: 0.5,
+        limit: 50,
+      });
+      const dets: Detection[] = (data.features || []).map((f: any) => ({
+        id: f.id,
+        lon: f.geometry.coordinates[0],
+        lat: f.geometry.coordinates[1],
+        ...f.properties,
+      }));
+      onResults(dets);
+    } catch {
+      // ignore
+    }
+    setLoading(false);
+  };
+
+  return (
+    <button
+      onClick={handleSearch}
+      disabled={loading}
+      className="fixed top-16 left-1/2 -translate-x-1/2 z-30 bg-cherry-500 hover:bg-cherry-400 disabled:opacity-60 text-white font-medium text-sm px-6 py-3 rounded shadow-lg flex items-center gap-2 transition-all"
+    >
+      {loading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+      Search this area
+    </button>
   );
 }
 
