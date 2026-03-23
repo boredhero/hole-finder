@@ -408,11 +408,50 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
                 good.sort(key=lambda c: c.score, reverse=True)
                 good = good[:50]
 
+                # Transform centroids to WGS84 for building filter
+                wgs84_points = []
+                for c in good:
+                    lon, lat = transformer.transform(c.geometry.x, c.geometry.y)
+                    wgs84_points.append((lon, lat))
+
+                # Filter out detections on buildings using OSM data
+                if wgs84_points:
+                    from hole_finder.detection.postprocess.building_filter import fetch_building_polygons
+                    from shapely.prepared import prep as shapely_prep
+                    from shapely.geometry import MultiPolygon
+
+                    lons = [p[0] for p in wgs84_points]
+                    lats = [p[1] for p in wgs84_points]
+                    buildings = fetch_building_polygons(
+                        min(lons), min(lats), max(lons), max(lats),
+                    )
+                    if buildings:
+                        merged = shapely_prep(MultiPolygon(buildings))
+                        keep = []
+                        for c, (lon, lat) in zip(good, wgs84_points):
+                            if not merged.contains(Point(lon, lat)):
+                                keep.append((c, lon, lat))
+                            else:
+                                log.info("building_filtered", lon=round(lon, 5), lat=round(lat, 5),
+                                         score=round(c.score, 2))
+                        log.info("building_filter_result",
+                                 before=len(good), after=len(keep),
+                                 removed=len(good) - len(keep))
+                        good_with_coords = keep
+                    else:
+                        good_with_coords = list(zip(good, [p[0] for p in wgs84_points], [p[1] for p in wgs84_points]))
+                else:
+                    good_with_coords = []
+
                 # Store detections
                 async def _store():
                     async with _async_session() as session:
-                        for c in good:
-                            lon, lat = transformer.transform(c.geometry.x, c.geometry.y)
+                        for item in good_with_coords:
+                            if len(item) == 3:
+                                c, lon, lat = item
+                            else:
+                                c = item[0]
+                                lon, lat = transformer.transform(c.geometry.x, c.geometry.y)
                             outline_wgs84 = _transform_outline(c.outline, transformer)
                             det = Detection(
                                 feature_type=ft_map.get(c.feature_type.value, DBFeatureType.UNKNOWN),
@@ -433,10 +472,10 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
                 asyncio.run(_store())
                 result["detect_s"] = round(time.perf_counter() - t0, 2)
                 result["raw_candidates"] = len(candidates)
-                result["stored"] = len(good)
+                result["stored"] = len(good_with_coords)
 
                 with _det_lock:
-                    total_detections += len(good)
+                    total_detections += len(good_with_coords)
             except Exception as e:
                 log.error("detect_tile_failed", tile=tile_path, error=str(e))
                 result["error"] = f"detect: {e}"
