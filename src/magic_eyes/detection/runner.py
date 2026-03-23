@@ -92,6 +92,9 @@ class PassRunner:
             derivatives = {}
 
         def _run_single_pass(detection_pass: DetectionPass) -> list[tuple[str, Candidate]]:
+            import time
+            from magic_eyes.utils.logging import log
+
             pass_config = self.config.get(f"passes.{detection_pass.name}", {})
             pass_input = PassInput(
                 dem=dem,
@@ -102,10 +105,13 @@ class PassRunner:
                 config=pass_config,
             )
             try:
+                t0 = time.time()
                 candidates = detection_pass.run(pass_input)
+                elapsed = time.time() - t0
+                log.info("pass_complete", pass_name=detection_pass.name,
+                         candidates=len(candidates), elapsed_s=round(elapsed, 2))
                 return [(detection_pass.name, c) for c in candidates]
             except Exception as e:
-                from magic_eyes.utils.logging import log
                 log.warning("pass_failed", pass_name=detection_pass.name, error=str(e))
                 return []
 
