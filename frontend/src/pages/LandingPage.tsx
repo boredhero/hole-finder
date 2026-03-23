@@ -12,7 +12,7 @@ import { useJobProgress } from '../hooks/useJobProgress';
 import { useStore } from '../store';
 import { geocodeZip, getDetectionCount, getDetections, startConsumerScan } from '../api/client';
 import { geometryToBbox, formatRegionName } from '../utils';
-import { Locate, Map as MapIcon, Search, ArrowLeft, Settings2, Loader2, AlertCircle } from 'lucide-react';
+import { Locate, Map as MapIcon, ArrowLeft, Settings2, Loader2, AlertCircle } from 'lucide-react';
 import type { Detection } from '../types';
 
 type Phase = 'splash' | 'regionPicker' | 'processing' | 'results' | 'tour' | 'explore';
@@ -307,8 +307,8 @@ export default function LandingPage() {
 
         {/* Geo error */}
         {geoError && (
-          <div className="flex items-center gap-2 bg-red-900/30 border border-red-700/50 text-red-300 text-sm rounded px-4 py-3 mb-4">
-            <AlertCircle size={16} className="flex-shrink-0" />
+          <div className="flex items-center gap-3 bg-red-900/30 border border-red-700/50 text-red-300 text-base rounded px-5 py-4 mb-6">
+            <AlertCircle size={18} className="flex-shrink-0" />
             {geoError}
           </div>
         )}
@@ -333,31 +333,28 @@ export default function LandingPage() {
 
           {/* Zip code fallback — appears after geolocation error */}
           {geoError && (
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={5}
-                  placeholder="Enter zip code"
-                  value={zipCode}
-                  onChange={(e) => { setZipCode(e.target.value.replace(/\D/g, '')); setZipError(null); }}
-                  onKeyDown={(e) => e.key === 'Enter' && handleZipSubmit()}
-                  className="w-full bg-slate-800 border border-slate-600 text-white text-lg py-4 pl-10 pr-4 rounded focus:outline-none focus:border-blue-500 transition-colors"
-                />
-              </div>
+            <div className="flex items-stretch gap-4">
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={5}
+                placeholder="Zip code"
+                value={zipCode}
+                onChange={(e) => { setZipCode(e.target.value.replace(/\D/g, '')); setZipError(null); }}
+                onKeyDown={(e) => e.key === 'Enter' && handleZipSubmit()}
+                className="flex-1 min-w-0 bg-slate-800 border-2 border-slate-600 text-white text-xl py-4 px-6 rounded focus:outline-none focus:border-blue-500 transition-colors placeholder:text-slate-500"
+              />
               <button
                 onClick={handleZipSubmit}
                 disabled={zipLoading || zipCode.length !== 5}
-                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-semibold py-4 px-6 rounded text-lg transition-colors"
+                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-semibold py-4 px-10 rounded text-lg transition-colors flex-shrink-0"
               >
                 {zipLoading ? <Loader2 size={22} className="animate-spin" /> : 'Go'}
               </button>
             </div>
           )}
           {zipError && (
-            <p className="text-red-400 text-sm">{zipError}</p>
+            <p className="text-red-400 text-base">{zipError}</p>
           )}
         </div>
 

@@ -13,6 +13,14 @@ Processes free, publicly available LiDAR elevation data (USGS 3DEP, PASDA, state
 - **Sinkholes** identified with multi-scale TPI, sky-view factor, and curvature analysis
 - **Other anomalies** via a plugin system that makes adding new detection passes trivial
 
+### Consumer Experience
+
+"Find a Hole Near Me" — enter your zip code or share your location, and the system automatically downloads and processes nearby LiDAR terrain data in under 5 minutes. An animated loading screen shows progress with rotating fun facts about caves and geology. When done, you're taken on a Tinder-style guided tour of the most interesting finds, swiping through detection cards while the map flies to each one.
+
+### Advanced Playground
+
+Full-featured interface at `/playground` with sidebar filtering by feature type and confidence, job management for processing entire regions, validation workflows, comments, and heatmap overlays.
+
 ## Architecture
 
 ### Data Pipeline
@@ -170,11 +178,66 @@ Processes free, publicly available LiDAR elevation data (USGS 3DEP, PASDA, state
 
 **Backend:** Python 3.12, FastAPI, SQLAlchemy + GeoAlchemy2, PostGIS, Celery + Redis, PDAL
 
-**Frontend:** React + TypeScript, deck.gl, MapLibre GL JS, Zustand, TanStack Query, Tailwind CSS
+**Frontend:** React + TypeScript, MapLibre GL JS (MVT vector tiles), deck.gl (heatmap), framer-motion (swipe cards), Zustand, TanStack Query, Tailwind CSS v4
 
 **ML:** scikit-learn (Random Forest), PyTorch + ROCm (U-Net, YOLOv8)
 
 **Infrastructure:** Docker, GitHub Actions CI/CD, nginx reverse proxy
+
+## API
+
+Interactive API docs available at `/api/docs` (Swagger UI) when running locally.
+
+### Core Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/detections` | Query detections in a bounding box (GeoJSON FeatureCollection) |
+| GET | `/api/detections/{id}` | Full detection detail with pass results and validation history |
+| GET | `/api/detections/count` | Fast count of detections near a point (for area availability check) |
+
+### Map Tiles
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/tiles/{z}/{x}/{y}.mvt` | Mapbox Vector Tiles for detection rendering (PostGIS ST_AsMVT) |
+| GET | `/api/tiles/ground-truth/{z}/{x}/{y}.mvt` | Ground truth site vector tiles |
+| GET | `/api/raster/{layer}/{z}/{x}/{y}.png` | Hillshade and terrain-RGB raster tiles |
+
+### Consumer Flow
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/geocode?zip=15208` | Zip code geocoding via US Census Bureau (server-side proxy) |
+| POST | `/api/explore/scan` | Start auto-processing job near a location (3km radius, 4 tile cap, < 5 min) |
+
+### Job Management
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/jobs` | List processing jobs |
+| POST | `/api/jobs` | Submit a new processing job (region, draw polygon, or pin) |
+| GET | `/api/jobs/{id}` | Get job status and progress |
+| POST | `/api/jobs/{id}/cancel` | Cancel a running job |
+| WS | `/ws/jobs` | WebSocket for real-time job progress (stage, %, completion) |
+
+### Validation & Comments
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/detections/{id}/validate` | Validate detection (confirm/reject/uncertain + notes) |
+| GET/POST | `/api/detections/{id}/comments` | Read/add comments on a detection |
+| POST | `/api/detections/{id}/save` | Bookmark a detection |
+
+### Data & Export
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/regions` | List available region polygons (13 regions across 9 states) |
+| GET | `/api/regions/{name}` | Get region GeoJSON boundary |
+| GET/POST | `/api/ground-truth` | Ground truth site CRUD |
+| GET | `/api/export/geojson` | Export detections as GeoJSON file |
+| GET | `/api/export/csv` | Export detections as CSV file |
 
 ## Quick Start
 

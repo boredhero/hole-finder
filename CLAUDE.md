@@ -1,7 +1,7 @@
 # Hole Finder — Complete Development Guide
 
 ## What This Is
-LiDAR terrain anomaly detection platform. Downloads free public LiDAR data, processes it through native compiled tools (PDAL/GDAL/WhiteboxTools), runs 11 detection passes to find caves, mines, sinkholes, and stores results permanently in PostGIS. React frontend with deck.gl map shows everything.
+LiDAR terrain anomaly detection platform. Downloads free public LiDAR data, processes it through native compiled tools (PDAL/GDAL/WhiteboxTools), runs 11 detection passes to find caves, mines, sinkholes, and stores results permanently in PostGIS. Two frontends: a consumer "Find a Hole Near Me" experience with auto-processing and guided Tinder-style tours, and an advanced playground with full filtering/job management.
 
 **Live:** holefinder.martinospizza.dev and anomalies.martinospizza.dev
 **Repo:** github.com/boredhero/anomalies-browser (GPL-3.0)
@@ -15,7 +15,9 @@ COPC/LAZ tile
   → GDAL (C) + WhiteboxTools (Rust): 11 derivatives in parallel
   → 11 detection passes (Python, consume rasters only, parallel ThreadPool)
   → DBSCAN fusion → PostGIS (permanent)
-  → React + deck.gl + MapLibre frontend
+  → MVT vector tiles (ST_AsMVT, cached) → MapLibre native circle layers
+  → Consumer flow: geolocation/zip → auto-process → guided tour
+  → Playground: full sidebar + filters + job management
 ```
 
 ## Critical Rules (READ THESE)
@@ -70,15 +72,16 @@ src/hole_finder/
   db/models.py                     # SQLAlchemy + GeoAlchemy2 ORM
   db/repositories.py               # Spatial queries (get_detections_near_point etc)
   api/routes/
-    detections.py                  # GET /api/detections (bbox query), GET /api/detections/{id}
-    jobs.py                        # GET/POST /api/jobs, cancel
+    detections.py                  # GET /api/detections (bbox query), /count, GET /api/detections/{id}
+    jobs.py                        # GET/POST /api/jobs, cancel, POST /api/explore/scan (consumer)
+    geocode.py                     # GET /api/geocode?zip=X (Census geocoder proxy)
     validation.py                  # POST validate, GET/POST ground-truth
     comments.py                    # Comments + saved detections
     tiles.py                       # Vector tiles (MVT) via ST_AsMVT
     raster_tiles.py                # Hillshade/terrain-RGB PNG tiles
     exports.py                     # GeoJSON/CSV download
     regions.py                     # List/get region GeoJSON
-    websocket.py                   # WS /ws/jobs for progress
+    websocket.py                   # WS /ws/jobs for progress (includes stage + completion)
   processing/
     pipeline.py                    # ProcessingPipeline orchestrator
     derivatives.py                 # GDAL/WBT subprocess wrappers + parallel orchestrator
@@ -99,12 +102,19 @@ src/hole_finder/
     ground_truth/                  # Loaders for PASDA karst (111K), PA AML (11K), USGS NY, OH, NC, MD, MA, LA, CA
 
 frontend/src/
-  components/Map/MapView.tsx       # MapLibre + deck.gl + 3D terrain
+  pages/LandingPage.tsx            # Consumer flow: splash → processing → results → tour → explore
+  pages/PlaygroundPage.tsx         # Advanced mode: map + sidebar
+  components/Map/MapView.tsx       # MapLibre + MVT vector tiles + deck.gl heatmap + 3D terrain
   components/Map/DrawControl.tsx   # AOI polygon drawing
+  components/Explore/              # TopBar, BottomDrawer, SearchButton, DetectionCard
+  components/Explore/ProcessingScreen.tsx  # Animated loading with stages + fun facts
+  components/Explore/ResultsSplash.tsx     # "Found X features!" summary
+  components/Explore/SwipeCard.tsx         # framer-motion Tinder-style swipeable card
   components/Sidebar/              # FilterPanel, DetailPanel (with comments), JobPanel
-  store/index.ts                   # Zustand state
-  hooks/                           # TanStack Query hooks
-  api/client.ts                    # Typed fetch wrapper
+  store/index.ts                   # Zustand state (map, processing, tour, filters)
+  hooks/useDetections.ts           # TanStack Query hooks (playground + explore)
+  hooks/useJobProgress.ts          # WebSocket hook for real-time job progress
+  api/client.ts                    # Typed fetch wrapper (detections, jobs, geocode, etc.)
 
 configs/passes/                    # TOML detection configs (cave_hunting, sinkhole_survey, mine_detection, salt_dome_detection, lava_tube_detection)
 configs/regions/                   # 13 GeoJSON region polygons (PA, WV, OH, NY, NC, MD, MA, LA, CA)
@@ -183,6 +193,45 @@ After detection, transform UTM→WGS84 with pyproj, create Detection ORM objects
 3. Add test in `tests/unit/test_api.py` route structure test
 4. If new DB table needed: add model in `db/models.py`, write migration in `alembic/versions/`
 
+## Frontend Architecture
+
+Two routes via react-router-dom v7:
+- **`/`** — Consumer landing page ("Find a Hole Near Me"). Phases: splash → processing → results → tour → explore
+- **`/playground`** — Advanced mode with sidebar (filters, detection list, jobs, detail panel)
+
+**Map rendering:** PostGIS MVT vector tiles via `ST_AsMVT` → MapLibre native circle layers. Zoom-dependent confidence filter (0.7 at low zoom → 0.3 at high zoom). Confidence-based opacity and radius scaling. deck.gl only used for optional heatmap overlay.
+
+**Consumer flow:** Geolocation or zip code → check if detections exist (`GET /api/detections/count`) → if none, auto-start processing via `POST /api/explore/scan` → WebSocket-driven animated loading screen → results splash → Tinder-style swipeable guided tour of top detections (framer-motion).
+
+**Design language:** Square corners (`rounded` = 4px), dark slate theme, `p-6` sidebar padding. No rounded-xl/2xl/full on UI elements (only on circular indicators).
+
+## API Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | /api/detections | Bbox query, GeoJSON FeatureCollection (limit 500 playground, 50 explore) |
+| GET | /api/detections/{id} | Single detection detail with pass results + validation events |
+| GET | /api/detections/count | Fast ST_DWithin count near a point (for area check) |
+| GET | /api/tiles/{z}/{x}/{y}.mvt | MVT vector tiles for map rendering (PostGIS ST_AsMVT) |
+| GET | /api/tiles/ground-truth/{z}/{x}/{y}.mvt | Ground truth MVT tiles |
+| GET | /api/raster/{layer}/{z}/{x}/{y}.png | Hillshade/terrain-RGB raster tiles |
+| GET | /api/geocode?zip=X | Census geocoder proxy (zip → lat/lon) |
+| POST | /api/explore/scan | Consumer auto-processing (3km radius, 4 tile cap) |
+| GET/POST | /api/jobs | List/create processing jobs |
+| GET | /api/jobs/{id} | Single job status |
+| POST | /api/jobs/{id}/cancel | Cancel job |
+| WS | /ws/jobs | Real-time job progress (stage, progress, completion) |
+| GET | /api/regions | List available region polygons |
+| GET | /api/regions/{name} | Single region GeoJSON |
+| GET/POST | /api/ground-truth | Ground truth CRUD |
+| POST | /api/detections/{id}/validate | Validate detection (confirm/reject/uncertain) |
+| GET/POST | /api/detections/{id}/comments | Comments CRUD |
+| POST | /api/detections/{id}/save | Save/bookmark detection |
+| GET | /api/export/geojson | Export detections as GeoJSON |
+| GET | /api/export/csv | Export detections as CSV |
+| GET | /api/health | Health check |
+| GET | /api/info | Version info |
+
 ## Current State
 - 798 real detections from Laurel Caverns tile stored in PostGIS
 - 36 validation sites seeded (PA, WV, OH, NY, NC, MD, MA, LA, CA caves + mines + sinkholes)
@@ -190,10 +239,13 @@ After detection, transform UTM→WGS84 with pyproj, create Detection ORM objects
 - Both domains live with TLS
 - 1 COPC tile downloaded and processed (28.2M points → 1500x1500 DEM → 11 derivatives → detections)
 - Derivatives compute in 1.6s (parallel native), detection in ~66s (7 passes)
+- Consumer "Find a Hole Near Me" flow with zip code fallback, auto-processing, and guided tour
+- MVT vector tiles for fast map rendering at any scale
+- WebSocket real-time job progress with stage reporting
 
 ## What's NOT Done Yet
 - Only 1 tile processed — need to process more regions
 - ML models not trained (RF, UNet, YOLO) — infrastructure ready, need training data
-- No real-time tile processing from UI job submission (Celery tasks wired but not end-to-end tested)
+- Consumer auto-processing flow not end-to-end tested in production (Celery + WebSocket)
 - Performance: detection loop (66s) could be faster with vectorized morphometrics
-- Frontend needs polish: some features wired but not battle-tested
+- httpx not in Docker image deps yet (needed for geocode proxy)
