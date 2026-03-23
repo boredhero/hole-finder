@@ -29,6 +29,12 @@ interface AppState {
   // Map viewport for queries
   bbox: [number, number, number, number] | null;
   setBbox: (b: [number, number, number, number]) => void;
+
+  // AOI drawing
+  drawingAOI: boolean;
+  setDrawingAOI: (v: boolean) => void;
+  drawnAOI: GeoJSON.Geometry | null;
+  setDrawnAOI: (g: GeoJSON.Geometry | null) => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -58,4 +64,9 @@ export const useStore = create<AppState>((set) => ({
 
   bbox: null,
   setBbox: (b) => set({ bbox: b }),
+
+  drawingAOI: false,
+  setDrawingAOI: (v) => set({ drawingAOI: v }),
+  drawnAOI: null,
+  setDrawnAOI: (g) => set({ drawnAOI: g }),
 }));

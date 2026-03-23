@@ -52,6 +52,7 @@ async def list_detections(
     east: float = Query(..., description="Bounding box east longitude"),
     north: float = Query(..., description="Bounding box north latitude"),
     feature_type: list[str] | None = Query(None, description="Filter by feature type"),
+    source_pass: str | None = Query(None, description="Filter by source detection pass name"),
     min_confidence: float = Query(0.0, ge=0.0, le=1.0),
     validated: bool | None = Query(None, description="Filter by validation status"),
     limit: int = Query(10000, le=50000),
@@ -72,6 +73,9 @@ async def list_detections(
         ft_enums = [FeatureType(ft) for ft in feature_type if ft in FeatureType.__members__]
         if ft_enums:
             stmt = stmt.where(Detection.feature_type.in_(ft_enums))
+
+    if source_pass:
+        stmt = stmt.where(Detection.source_passes.contains([source_pass]))
 
     if validated is not None:
         stmt = stmt.where(Detection.validated == validated)

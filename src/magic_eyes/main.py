@@ -17,7 +17,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="Magic Eyes",
+        title="Hole Finder",
         description="LiDAR terrain anomaly detection API — caves, mines, sinkholes",
         version="0.1.0",
         lifespan=lifespan,
@@ -40,6 +40,7 @@ def create_app() -> FastAPI:
 
     # Register all routes
     from magic_eyes.api.routes import (
+        comments,
         datasets,
         detections,
         exports,
@@ -52,6 +53,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(detections.router, prefix="/api")
+    app.include_router(comments.router, prefix="/api")
     app.include_router(jobs.router, prefix="/api")
     app.include_router(datasets.router, prefix="/api")
     app.include_router(regions.router, prefix="/api")
@@ -99,7 +101,7 @@ def _load_info() -> dict:
                         pass
                     data[key.strip()] = val
             return data
-    return {"version": "0.1.0", "name": "Magic Eyes"}
+    return {"version": "0.1.0", "name": "Hole Finder"}
 
 
 def _mount_frontend(app: FastAPI) -> None:

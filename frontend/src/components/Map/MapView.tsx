@@ -8,6 +8,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { useStore } from '../../store';
 import { useDetections, useGroundTruth } from '../../hooks/useDetections';
+import DrawControl from './DrawControl';
 import type { Basemap, Detection, GroundTruthSite } from '../../types';
 import { FEATURE_COLORS } from '../../types';
 
@@ -39,6 +40,8 @@ export default function MapView() {
   const setHoveredDetectionId = useStore((s) => s.setHoveredDetectionId);
   const hoveredId = useStore((s) => s.hoveredDetectionId);
   const setSidebarOpen = useStore((s) => s.setSidebarOpen);
+  const drawingAOI = useStore((s) => s.drawingAOI);
+  const setDrawnAOI = useStore((s) => s.setDrawnAOI);
 
   const { data: detections = [] } = useDetections();
   const { data: groundTruth = [] } = useGroundTruth();
@@ -138,6 +141,11 @@ export default function MapView() {
       cursor={hoveredId ? 'pointer' : 'grab'}
     >
       <DeckGLOverlay layers={layers} />
+      <DrawControl
+        active={drawingAOI}
+        onDrawCreate={(geom) => setDrawnAOI(geom)}
+        onDrawDelete={() => setDrawnAOI(null)}
+      />
       <NavigationControl position="bottom-right" />
       <ScaleControl position="bottom-left" />
       <GeolocateControl position="bottom-right" />

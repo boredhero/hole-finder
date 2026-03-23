@@ -89,7 +89,7 @@ class TestOpenAPI:
         r = client.get("/api/openapi.json")
         assert r.status_code == 200
         schema = r.json()
-        assert schema["info"]["title"] == "Magic Eyes"
+        assert schema["info"]["title"] == "Hole Finder"
         paths = list(schema["paths"].keys())
         assert "/api/health" in paths
         assert "/api/regions" in paths
@@ -126,6 +126,12 @@ class TestRouteStructure:
             "/api/tiles/ground-truth/{z}/{x}/{y}.mvt",
             "/api/raster/{layer}/{z}/{x}/{y}.png",
             "/api/raster/terrain-rgb/{z}/{x}/{y}.png",
+            "/api/detections/{detection_id}/comments",
+            "/api/comments/{comment_id}",
+            "/api/saved",
+            "/api/detections/{detection_id}/save",
+            "/api/saved/{save_id}",
+            "/api/info",
         ]
 
         for path in expected:

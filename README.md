@@ -1,8 +1,8 @@
-# Anomalies Browser
+# Hole Finder
 
 A modular LiDAR analysis platform that automatically detects cave entrances, mine portals, sinkholes, and other terrain anomalies using a hybrid classical + machine learning approach.
 
-**Live at:** [anomalies.martinospizza.dev](https://anomalies.martinospizza.dev)
+**Live at:** [holefinder.martinospizza.dev](https://holefinder.martinospizza.dev) | [anomalies.martinospizza.dev](https://anomalies.martinospizza.dev)
 
 ## What It Does
 
