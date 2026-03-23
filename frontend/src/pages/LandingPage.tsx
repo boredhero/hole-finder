@@ -49,7 +49,7 @@ export default function LandingPage() {
     setTargetViewState({ longitude: lon, latitude: lat, zoom: 14, pitch: 45, bearing: -15 });
 
     try {
-      const { job_id } = await startConsumerScan(lat, lon, 3);
+      const { job_id } = await startConsumerScan(lat, lon, 5);
       console.log('[HoleFinder] Scan started, job:', job_id);
       setActiveJobId(job_id);
       setPhase('processing');
@@ -142,7 +142,7 @@ export default function LandingPage() {
       return;
     }
 
-    const r = 3 / 111.32;
+    const r = 5 / 111.32;
     const west = center.lon - r, south = center.lat - r;
     const east = center.lon + r, north = center.lat + r;
 

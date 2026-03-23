@@ -19,7 +19,7 @@ router = APIRouter(tags=["jobs"])
 class ConsumerScanRequest(BaseModel):
     lat: float = Field(..., ge=-90, le=90)
     lon: float = Field(..., ge=-180, le=180)
-    radius_km: float = Field(3.0, ge=0.5, le=5.0)
+    radius_km: float = Field(5.0, ge=0.5, le=10.0)
 
 
 def _job_to_schema(j: Job) -> JobStatus:
@@ -187,7 +187,7 @@ async def consumer_scan(
         region=region_geom,
         config={
             "pass_config": "sinkhole_survey",
-            "tile_limit": 4,
+            "tile_limit": 12,
             "consumer": True,
             "center_lat": body.lat,
             "center_lon": body.lon,
