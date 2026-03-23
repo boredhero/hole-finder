@@ -263,7 +263,7 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
         _update_job("RUNNING", 10, f"Downloading {len(tiles)} tiles")
 
         # Download tiles — parallel (4 concurrent), limit to first 10 for safety
-        tile_limit = min(len(tiles), 10)
+        tile_limit = min(len(tiles), 500)
         downloaded = []
         with profiler.stage("tile_downloads", tile_limit=tile_limit) as ctx:
             source = get_source("usgs_3dep")
@@ -301,9 +301,12 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
             _update_job("FAILED", 40, "No tiles downloaded successfully")
             return
 
-        # Process each tile — call pipeline directly, NOT via Celery task
-        # (we're already inside a Celery task, so calling another task
-        # as a function triggers broker routing which fails without a task ID)
+        # Process tiles — 8 in parallel via ThreadPoolExecutor.
+        # Each tile's heavy work (PDAL, GDAL, WBT) runs as subprocesses
+        # that release the GIL, so threads give true parallelism.
+        # Can't use ProcessPoolExecutor (Celery daemonic process constraint).
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         from hole_finder.processing.pipeline import ProcessingPipeline
 
         import hole_finder.detection.passes  # register passes
@@ -330,110 +333,138 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
             "unknown": DBFeatureType.UNKNOWN,
         }
 
+        # Thread-safe counter
+        import threading
+        _det_lock = threading.Lock()
         total_detections = 0
-        for i, tile_path in enumerate(downloaded):
-            progress = 40 + (i / len(downloaded)) * 50
-            _update_job("RUNNING", progress, f"Processing tile {i+1}/{len(downloaded)}")
+        completed_tiles = 0
+
+        def _process_single_tile(i: int, tile_path: str) -> dict:
+            """Process → detect → store → cleanup for one tile. Runs in a thread."""
+            nonlocal total_detections, completed_tiles
+            result = {"tile": tile_path, "index": i}
 
             # Process: PDAL → DEM → derivatives
-            with profiler.stage(f"process_tile_{i}", parent="tile_processing") as ctx:
-                try:
-                    pipeline = ProcessingPipeline(output_dir=settings.processed_dir)
-                    input_path = Path(tile_path)
-                    if input_path.suffix in (".laz", ".las"):
-                        tile_result = pipeline.process_point_cloud(input_path)
-                    else:
-                        tile_result = pipeline.process_dem_file(input_path)
-                    ctx["dem_path"] = str(tile_result.dem_path)
-                    ctx["derivatives"] = len(tile_result.derivative_paths)
-                except Exception as e:
-                    log.error("process_tile_failed", tile=tile_path, error=str(e))
-                    ctx["error"] = str(e)
-                    continue
+            t0 = time.perf_counter()
+            try:
+                pipeline = ProcessingPipeline(output_dir=settings.processed_dir)
+                input_path = Path(tile_path)
+                if input_path.suffix in (".laz", ".las"):
+                    tile_result = pipeline.process_point_cloud(input_path)
+                else:
+                    tile_result = pipeline.process_dem_file(input_path)
+                result["process_s"] = round(time.perf_counter() - t0, 2)
+                result["derivatives"] = len(tile_result.derivative_paths)
+            except Exception as e:
+                log.error("process_tile_failed", tile=tile_path, error=str(e))
+                result["error"] = f"process: {e}"
+                return result
 
             # Detect
-            with profiler.stage(f"detect_tile_{i}", parent="tile_detection") as ctx:
-                try:
-                    candidates = runner.run_on_dem(
-                        tile_result.dem_path,
-                        tile_result.derivative_paths,
-                    )
+            t0 = time.perf_counter()
+            try:
+                candidates = runner.run_on_dem(
+                    tile_result.dem_path,
+                    tile_result.derivative_paths,
+                )
 
-                    # Filter and store
-                    crs_code = tile_result.crs or 32617
-                    transformer = Transformer.from_crs(f"EPSG:{crs_code}", "EPSG:4326", always_xy=True)
-                    good = [c for c in candidates
-                            if c.score > 0.4
-                            and c.morphometrics.get("area_m2", 0) > 50
-                            and (c.morphometrics.get("depth_m", 0)
-                                 or c.morphometrics.get("lrm_anomaly_m", 0)) < 100]
+                crs_code = tile_result.crs or 32617
+                transformer = Transformer.from_crs(f"EPSG:{crs_code}", "EPSG:4326", always_xy=True)
+                good = [c for c in candidates
+                        if c.score > 0.4
+                        and c.morphometrics.get("area_m2", 0) > 50
+                        and (c.morphometrics.get("depth_m", 0)
+                             or c.morphometrics.get("lrm_anomaly_m", 0)) < 100]
 
-                    async def _store_detections():
-                        async with _async_session() as session:
-                            for c in good:
-                                lon, lat = transformer.transform(c.geometry.x, c.geometry.y)
-                                det = Detection(
-                                    feature_type=ft_map.get(c.feature_type.value, DBFeatureType.UNKNOWN),
-                                    geometry=from_shape(Point(lon, lat), srid=4326),
-                                    confidence=c.score,
-                                    depth_m=c.morphometrics.get("depth_m") or c.morphometrics.get("lrm_anomaly_m"),
-                                    area_m2=c.morphometrics.get("area_m2"),
-                                    circularity=c.morphometrics.get("circularity"),
-                                    wall_slope_deg=c.morphometrics.get("wall_slope_deg"),
-                                    source_passes=c.metadata.get("source_passes") if c.metadata else None,
-                                    morphometrics={k: float(v) if isinstance(v, (int, float)) else v
-                                                   for k, v in c.morphometrics.items()},
-                                )
-                                session.add(det)
-                            await session.commit()
+                # Store detections
+                async def _store():
+                    async with _async_session() as session:
+                        for c in good:
+                            lon, lat = transformer.transform(c.geometry.x, c.geometry.y)
+                            det = Detection(
+                                feature_type=ft_map.get(c.feature_type.value, DBFeatureType.UNKNOWN),
+                                geometry=from_shape(Point(lon, lat), srid=4326),
+                                confidence=c.score,
+                                depth_m=c.morphometrics.get("depth_m") or c.morphometrics.get("lrm_anomaly_m"),
+                                area_m2=c.morphometrics.get("area_m2"),
+                                circularity=c.morphometrics.get("circularity"),
+                                wall_slope_deg=c.morphometrics.get("wall_slope_deg"),
+                                source_passes=c.metadata.get("source_passes") if c.metadata else None,
+                                morphometrics={k: float(v) if isinstance(v, (int, float)) else v
+                                               for k, v in c.morphometrics.items()},
+                            )
+                            session.add(det)
+                        await session.commit()
 
-                    asyncio.run(_store_detections())
+                asyncio.run(_store())
+                result["detect_s"] = round(time.perf_counter() - t0, 2)
+                result["raw_candidates"] = len(candidates)
+                result["stored"] = len(good)
+
+                with _det_lock:
                     total_detections += len(good)
-                    ctx["raw_candidates"] = len(candidates)
-                    ctx["stored"] = len(good)
-                    log.info("tile_detection_complete", tile=tile_path,
-                             raw=len(candidates), stored=len(good))
-                except Exception as e:
-                    log.error("detect_tile_failed", tile=tile_path, error=str(e))
-                    ctx["error"] = str(e)
-                    continue
+            except Exception as e:
+                log.error("detect_tile_failed", tile=tile_path, error=str(e))
+                result["error"] = f"detect: {e}"
 
-            # Cleanup: delete raw COPC + intermediate derivatives
-            # Keep: DEM (for re-running detection) + hillshade (for map tiles)
-            # Raw tiles can be re-downloaded if DEM needs regenerating
-            with profiler.stage(f"cleanup_tile_{i}", parent="tile_cleanup") as ctx:
-                freed_bytes = 0
+            # Cleanup: delete raw + intermediate derivatives, keep DEM + hillshade
+            freed_bytes = 0
+            raw_path = Path(tile_path)
+            if raw_path.exists():
+                freed_bytes += raw_path.stat().st_size
+                raw_path.unlink()
 
-                # Delete raw COPC/LAZ file
-                raw_path = Path(tile_path)
-                if raw_path.exists():
-                    sz = raw_path.stat().st_size
-                    raw_path.unlink()
-                    freed_bytes += sz
-                    log.info("cleanup_raw", path=str(raw_path), freed_mb=round(sz / 1e6, 1))
+            keep_derivatives = {"hillshade"}
+            if tile_result and tile_result.derivative_paths:
+                for name, deriv_path in tile_result.derivative_paths.items():
+                    if name in keep_derivatives:
+                        continue
+                    p = Path(deriv_path)
+                    if p.exists():
+                        freed_bytes += p.stat().st_size
+                        p.unlink()
 
-                # Delete intermediate derivatives (keep DEM + hillshade)
-                keep_derivatives = {"hillshade"}
-                if tile_result and tile_result.derivative_paths:
-                    for name, deriv_path in tile_result.derivative_paths.items():
-                        if name in keep_derivatives:
-                            continue
-                        p = Path(deriv_path)
-                        if p.exists():
-                            sz = p.stat().st_size
-                            p.unlink()
-                            freed_bytes += sz
+            if tile_result and tile_result.filled_dem_path:
+                filled = Path(tile_result.filled_dem_path)
+                if filled.exists():
+                    freed_bytes += filled.stat().st_size
+                    filled.unlink()
 
-                # Delete filled DEM (can regenerate from DEM)
-                if tile_result and tile_result.filled_dem_path:
-                    filled = Path(tile_result.filled_dem_path)
-                    if filled.exists():
-                        sz = filled.stat().st_size
-                        filled.unlink()
-                        freed_bytes += sz
+            result["freed_mb"] = round(freed_bytes / 1e6, 1)
 
-                ctx["freed_mb"] = round(freed_bytes / 1e6, 1)
-                log.info("tile_cleanup_complete", freed_mb=round(freed_bytes / 1e6, 1))
+            with _det_lock:
+                completed_tiles += 1
+            log.info("tile_complete", index=i, stored=result.get("stored", 0),
+                     freed_mb=result["freed_mb"],
+                     progress=f"{completed_tiles}/{len(downloaded)}")
+            return result
+
+        # Run 8 tiles in parallel
+        PARALLEL_TILES = 8
+        tile_results = []
+        with profiler.stage("parallel_processing", parallel=PARALLEL_TILES) as pctx:
+            with ThreadPoolExecutor(max_workers=PARALLEL_TILES) as executor:
+                futures = {
+                    executor.submit(_process_single_tile, i, tp): i
+                    for i, tp in enumerate(downloaded)
+                }
+                for future in as_completed(futures):
+                    idx = futures[future]
+                    try:
+                        res = future.result()
+                        tile_results.append(res)
+                        # Update progress
+                        pct = 40 + (len(tile_results) / len(downloaded)) * 55
+                        _update_job("RUNNING", pct,
+                                    f"Processed {len(tile_results)}/{len(downloaded)} tiles, "
+                                    f"{total_detections} detections so far")
+                    except Exception as e:
+                        log.error("tile_thread_failed", index=idx, error=str(e))
+                        tile_results.append({"index": idx, "error": str(e)})
+
+            pctx["tiles_ok"] = sum(1 for r in tile_results if "error" not in r)
+            pctx["tiles_failed"] = sum(1 for r in tile_results if "error" in r)
+            pctx["total_detections"] = total_detections
 
         profile_summary = profiler.log_summary()
 
