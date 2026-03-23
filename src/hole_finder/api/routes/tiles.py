@@ -41,20 +41,14 @@ async def get_vector_tile(
     """
     bbox = _tile_to_bbox(z, x, y)
 
-    # ST_AsMVT query — transforms detections into vector tile format
+    # ST_AsMVT query — point layer + outline polygon layer
     query = text("""
         WITH tile_bounds AS (
             SELECT ST_MakeEnvelope(:xmin, :ymin, :xmax, :ymax, 4326) AS geom
         ),
         tile_data AS (
             SELECT
-                ST_AsMVTGeom(
-                    d.geometry,
-                    tb.geom,
-                    4096,
-                    256,
-                    true
-                ) AS geom,
+                ST_AsMVTGeom(d.geometry, tb.geom, 4096, 256, true) AS geom,
                 d.id::text AS id,
                 d.feature_type::text AS feature_type,
                 d.confidence,
@@ -65,9 +59,23 @@ async def get_vector_tile(
             WHERE ST_Intersects(d.geometry, tb.geom)
               AND d.confidence >= :min_confidence
             LIMIT 100000
+        ),
+        outline_data AS (
+            SELECT
+                ST_AsMVTGeom(d.outline, tb.geom, 4096, 256, true) AS geom,
+                d.id::text AS id,
+                d.feature_type::text AS feature_type,
+                d.confidence
+            FROM detections d, tile_bounds tb
+            WHERE d.outline IS NOT NULL
+              AND ST_Intersects(d.outline, tb.geom)
+              AND d.confidence >= :min_confidence
+            LIMIT 100000
         )
-        SELECT ST_AsMVT(tile_data, 'detections', 4096, 'geom') AS mvt
-        FROM tile_data
+        SELECT
+            (SELECT ST_AsMVT(tile_data, 'detections', 4096, 'geom') FROM tile_data)
+            || (SELECT ST_AsMVT(outline_data, 'outlines', 4096, 'geom') FROM outline_data)
+        AS mvt
     """)
 
     result = await db.execute(query, {

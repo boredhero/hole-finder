@@ -11,7 +11,8 @@ instead of per-region Python loops. O(H*W) instead of O(N*H*W).
 """
 
 import numpy as np
-from shapely.geometry import Point
+from rasterio.features import shapes as rasterio_shapes
+from shapely.geometry import Point, shape
 
 from hole_finder.detection.array_backend import label, region_stats
 from hole_finder.detection.base import Candidate, DetectionPass, FeatureType, PassInput
@@ -68,6 +69,23 @@ class FillDifferencePass(DetectionPass):
         # Filter by area bounds (vectorized)
         valid = (areas_m2 >= min_area_m2) & (areas_m2 <= max_area_m2)
 
+        # Pre-compute outline polygons for all valid regions in one pass
+        # rasterio_shapes vectorizes labeled array → polygons in raster CRS
+        outlines: dict[int, object] = {}
+        try:
+            for geom_dict, value in rasterio_shapes(
+                labeled.astype(np.int32),
+                mask=(labeled > 0),
+                transform=input_data.transform,
+            ):
+                label_id = int(value)
+                # label IDs are 1-indexed, our arrays are 0-indexed
+                arr_idx = label_id - 1
+                if arr_idx in np.flatnonzero(valid):
+                    outlines[arr_idx] = shape(geom_dict)
+        except Exception:
+            pass  # outline extraction is best-effort
+
         candidates = []
         for idx in np.flatnonzero(valid):
             cy, cx = centroids[idx]
@@ -77,6 +95,7 @@ class FillDifferencePass(DetectionPass):
             candidates.append(
                 Candidate(
                     geometry=Point(geo_x, geo_y),
+                    outline=outlines.get(idx),
                     score=min(depth / 5.0, 1.0),
                     feature_type=FeatureType.DEPRESSION,
                     morphometrics={

@@ -10,7 +10,7 @@ import SwipeCard from '../components/Explore/SwipeCard';
 import { useRegions } from '../hooks/useRegions';
 import { useJobProgress } from '../hooks/useJobProgress';
 import { useStore } from '../store';
-import { geocodeZip, getDetectionCount, getDetections, startConsumerScan } from '../api/client';
+import { geocodeZip, getDetections, startConsumerScan } from '../api/client';
 import { geometryToBbox, formatRegionName } from '../utils';
 import { Locate, Map as MapIcon, ArrowLeft, Settings2, Loader2, AlertCircle } from 'lucide-react';
 import type { Detection } from '../types';
@@ -46,33 +46,13 @@ export default function LandingPage() {
     setTargetViewState({ longitude: lon, latitude: lat, zoom: 14, pitch: 45, bearing: -15 });
 
     try {
-      const { count } = await getDetectionCount(lat, lon, 3);
-
-      if (count > 0) {
-        // Detections exist — fetch top 50 for tour
-        const r = 3 / 111.32;
-        const data = await getDetections({
-          west: lon - r, south: lat - r, east: lon + r, north: lat + r,
-          min_confidence: 0.5,
-          limit: 50,
-        });
-        const dets: Detection[] = (data.features || []).map((f: any) => ({
-          id: f.id,
-          lon: f.geometry.coordinates[0],
-          lat: f.geometry.coordinates[1],
-          ...f.properties,
-        }));
-        setTourDetections(dets);
-        setTourIndex(0);
-        setPhase('results');
-      } else {
-        // No detections — start processing
-        const { job_id } = await startConsumerScan(lat, lon, 3);
-        setActiveJobId(job_id);
-        setPhase('processing');
-      }
+      // Always trigger a fresh scan — ensures polygon outlines are generated
+      // Consumer scan endpoint clears stale detections in the area first
+      const { job_id } = await startConsumerScan(lat, lon, 3);
+      setActiveJobId(job_id);
+      setPhase('processing');
     } catch {
-      // If count check fails, just go to explore
+      // If scan fails, just go to explore with whatever MVT tiles show
       setSearchStale(true);
       setPhase('explore');
     }

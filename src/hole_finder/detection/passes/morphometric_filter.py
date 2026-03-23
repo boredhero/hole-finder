@@ -8,8 +8,9 @@ regions in a single set of scipy.ndimage passes, then filters vectorized.
 """
 
 import numpy as np
+from rasterio.features import shapes as rasterio_shapes
 from scipy import ndimage
-from shapely.geometry import Point
+from shapely.geometry import Point, shape
 
 from hole_finder.detection.base import Candidate, DetectionPass, FeatureType, PassInput
 from hole_finder.detection.postprocess.classification import classify_candidate
@@ -69,6 +70,20 @@ class MorphometricFilterPass(DetectionPass):
             & (metrics["depth_m"] >= min_depth_m)
         )
 
+        # Pre-compute outline polygons for all valid regions
+        outlines: dict[int, object] = {}
+        try:
+            for geom_dict, value in rasterio_shapes(
+                labeled.astype(np.int32),
+                mask=(labeled > 0),
+                transform=input_data.transform,
+            ):
+                arr_idx = int(value) - 1  # label IDs are 1-indexed
+                if arr_idx in np.flatnonzero(valid):
+                    outlines[arr_idx] = shape(geom_dict)
+        except Exception:
+            pass  # outline extraction is best-effort
+
         candidates = []
         for idx in np.flatnonzero(valid):
             cy, cx = metrics["centroids"][idx]
@@ -83,6 +98,7 @@ class MorphometricFilterPass(DetectionPass):
 
             candidate = Candidate(
                 geometry=Point(geo_x, geo_y),
+                outline=outlines.get(idx),
                 score=score,
                 feature_type=FeatureType.UNKNOWN,
                 morphometrics={

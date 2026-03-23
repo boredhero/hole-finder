@@ -170,8 +170,16 @@ async def consumer_scan(
 
     from geoalchemy2.shape import from_shape
     from shapely.geometry import shape
+    from sqlalchemy import text
 
     region_geom = from_shape(shape(bbox_geojson), srid=4326)
+
+    # Clear stale detections in scan area before re-processing
+    await db.execute(
+        text("DELETE FROM detections WHERE ST_Within(geometry, ST_MakeEnvelope(:w, :s, :e, :n, 4326))"),
+        {"w": body.lon - r, "s": body.lat - r, "e": body.lon + r, "n": body.lat + r},
+    )
+    await db.commit()
 
     job = Job(
         job_type=JobType.FULL_PIPELINE,

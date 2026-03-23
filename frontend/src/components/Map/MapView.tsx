@@ -184,6 +184,33 @@ function MVTLayerManager() {
       });
     }
 
+    // Detection outline polygons (from same MVT source, 'outlines' layer)
+    if (!map.getLayer('detection-outlines-fill')) {
+      map.addLayer({
+        id: 'detection-outlines-fill',
+        type: 'fill',
+        source: 'detections-mvt',
+        'source-layer': 'outlines',
+        paint: {
+          'fill-color': '#dd2245',
+          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0.0, 16, 0.15, 18, 0.25],
+        },
+      });
+    }
+    if (!map.getLayer('detection-outlines-stroke')) {
+      map.addLayer({
+        id: 'detection-outlines-stroke',
+        type: 'line',
+        source: 'detections-mvt',
+        'source-layer': 'outlines',
+        paint: {
+          'line-color': '#ff335c',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 1, 16, 2, 18, 3],
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0.0, 16, 0.7, 18, 1.0],
+        },
+      });
+    }
+
     // Ground truth tiles
     if (!map.getSource('ground-truth-mvt')) {
       map.addSource('ground-truth-mvt', {
@@ -246,9 +273,40 @@ function MVTLayerManager() {
         }
       });
 
+      // Click outline polygon → same detail flow
+      map.on('click', 'detection-outlines-fill', async (e: any) => {
+        const feature = e.features?.[0];
+        if (!feature?.properties?.id) return;
+        try {
+          const detail = await getDetectionDetail(feature.properties.id);
+          const d: Detection = {
+            id: detail.id,
+            lat: e.lngLat.lat,
+            lon: e.lngLat.lng,
+            feature_type: detail.feature_type,
+            confidence: detail.confidence,
+            depth_m: detail.depth_m,
+            area_m2: detail.area_m2,
+            circularity: detail.circularity,
+            wall_slope_deg: detail.wall_slope_deg,
+            source_passes: detail.source_passes,
+            morphometrics: detail.morphometrics,
+            validated: detail.validated,
+            validation_notes: detail.validation_notes,
+          };
+          setSelectedDetection(d);
+          setDrawerState('detail');
+          setSidebarOpen(true);
+        } catch {
+          // ignore fetch errors on click
+        }
+      });
+
       // Cursor
       map.on('mouseenter', 'detections-circles', () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', 'detections-circles', () => { map.getCanvas().style.cursor = ''; });
+      map.on('mouseenter', 'detection-outlines-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'detection-outlines-fill', () => { map.getCanvas().style.cursor = ''; });
     };
 
     if (map.isStyleLoaded()) {

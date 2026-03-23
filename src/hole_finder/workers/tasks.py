@@ -24,10 +24,22 @@ from uuid import UUID
 import numpy as np
 import rasterio
 
+from shapely.ops import transform as shapely_transform
+
 from hole_finder.config import settings
 from hole_finder.utils.logging import log
 from hole_finder.utils.perf import PipelineProfiler, get_profiler, new_profiler
 from hole_finder.workers.celery_app import app
+
+
+def _transform_outline(outline, transformer):
+    """Transform an outline polygon from source CRS to WGS84."""
+    if outline is None:
+        return None
+    try:
+        return shapely_transform(lambda x, y: transformer.transform(x, y), outline)
+    except Exception:
+        return None
 
 
 @asynccontextmanager
@@ -174,9 +186,11 @@ def run_detection(self, dem_path: str, derivative_paths: dict, pass_config_name:
             batch = []
             for c in good:
                 lon, lat = transformer.transform(c.geometry.x, c.geometry.y)
+                outline_wgs84 = _transform_outline(c.outline, transformer)
                 det = Detection(
                     feature_type=ft_map.get(c.feature_type.value, DBFeatureType.UNKNOWN),
                     geometry=from_shape(Point(lon, lat), srid=4326),
+                    outline=from_shape(outline_wgs84, srid=4326) if outline_wgs84 else None,
                     confidence=c.score,
                     depth_m=c.morphometrics.get("depth_m") or c.morphometrics.get("lrm_anomaly_m"),
                     area_m2=c.morphometrics.get("area_m2"),
@@ -394,9 +408,11 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
                     async with _async_session() as session:
                         for c in good:
                             lon, lat = transformer.transform(c.geometry.x, c.geometry.y)
+                            outline_wgs84 = _transform_outline(c.outline, transformer)
                             det = Detection(
                                 feature_type=ft_map.get(c.feature_type.value, DBFeatureType.UNKNOWN),
                                 geometry=from_shape(Point(lon, lat), srid=4326),
+                                outline=from_shape(outline_wgs84, srid=4326) if outline_wgs84 else None,
                                 confidence=c.score,
                                 depth_m=c.morphometrics.get("depth_m") or c.morphometrics.get("lrm_anomaly_m"),
                                 area_m2=c.morphometrics.get("area_m2"),
