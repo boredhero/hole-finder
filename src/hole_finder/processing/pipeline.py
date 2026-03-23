@@ -6,11 +6,13 @@ All derivative computation is in derivatives.py.
 
 import json
 import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from hole_finder.processing.derivatives import compute_all_derivatives, fill_depressions
 from hole_finder.utils.logging import log
+from hole_finder.utils.perf import PipelineProfiler, get_profiler, new_profiler
 
 
 @dataclass
@@ -32,6 +34,7 @@ def generate_dem_pdal(
     target_srs: str | None = None,
 ) -> tuple[Path, Path]:
     """Generate ground DEM and filled DEM from point cloud using PDAL."""
+    profiler = get_profiler()
     output_dir.mkdir(parents=True, exist_ok=True)
     stem = input_path.stem.replace(".copc", "")
     dem_path = output_dir / f"{stem}_dem.tif"
@@ -51,17 +54,30 @@ def generate_dem_pdal(
              "output_type": "idw", "gdalopts": "COMPRESS=DEFLATE,TILED=YES,BLOCKXSIZE=256,BLOCKYSIZE=256",
              "data_type": "float32"},
         ])
-        log.info("pdal_dem", input=str(input_path))
+        log.info("pdal_dem_start", input=str(input_path), file_size_mb=round(input_path.stat().st_size / 1e6, 1))
+        t0 = time.perf_counter()
         proc = subprocess.run(
             ["pdal", "pipeline", "--stdin"],
             input=json.dumps({"pipeline": pipeline}),
             capture_output=True, text=True, timeout=900,
         )
+        pdal_elapsed = time.perf_counter() - t0
         if proc.returncode != 0:
             raise RuntimeError(f"PDAL DEM failed: {proc.stderr[:500]}")
+        log.info("pdal_dem_complete", elapsed_s=round(pdal_elapsed, 2), output=str(dem_path))
+        if profiler:
+            profiler.record("pdal_dem_generation", pdal_elapsed, parent="processing")
+    else:
+        log.info("pdal_dem_cached", path=str(dem_path))
 
     if not filled_path.exists():
-        fill_depressions(str(dem_path), str(filled_path))
+        t0 = time.perf_counter()
+        _result, fill_elapsed = fill_depressions(str(dem_path), str(filled_path))
+        log.info("fill_depressions_complete", elapsed_s=round(fill_elapsed, 2))
+        if profiler:
+            profiler.record("fill_depressions", fill_elapsed, parent="processing")
+    else:
+        log.info("fill_depressions_cached", path=str(filled_path))
 
     return dem_path, filled_path
 
@@ -95,16 +111,18 @@ class ProcessingPipeline:
         if marker.exists() and not force:
             return self._load_existing(tile_dir, deriv_dir)
 
-        log.info("pipeline_stage1_dem", input=str(input_path))
-        dem_path, filled_path = generate_dem_pdal(
-            input_path, tile_dir, self.resolution, self.target_srs
-        )
+        profiler = new_profiler(f"process_point_cloud:{stem}")
 
-        log.info("pipeline_stage2_derivatives")
-        derivative_paths = compute_all_derivatives(dem_path, filled_path, deriv_dir)
+        with profiler.stage("dem_generation", parent="processing", input=str(input_path)):
+            dem_path, filled_path = generate_dem_pdal(
+                input_path, tile_dir, self.resolution, self.target_srs
+            )
+
+        with profiler.stage("derivatives_all", parent="processing"):
+            derivative_paths = compute_all_derivatives(dem_path, filled_path, deriv_dir)
 
         marker.write_text(f"processed\nderivatives: {len(derivative_paths)}\n")
-        log.info("pipeline_complete", tile_dir=str(tile_dir), derivatives=len(derivative_paths))
+        profiler.log_summary()
 
         return ProcessedTile(
             tile_dir=tile_dir, dem_path=dem_path, filled_dem_path=filled_path,
@@ -122,14 +140,19 @@ class ProcessingPipeline:
         if marker.exists() and not force:
             return self._load_existing(tile_dir, deriv_dir)
 
+        profiler = new_profiler(f"process_dem:{stem}")
+
         filled_path = tile_dir / f"{stem}_filled.tif"
         if not filled_path.exists():
-            fill_depressions(str(dem_path), str(filled_path))
+            with profiler.stage("fill_depressions", parent="processing"):
+                _result, elapsed = fill_depressions(str(dem_path), str(filled_path))
 
-        log.info("pipeline_derivatives", dem=str(dem_path))
-        derivative_paths = compute_all_derivatives(dem_path, filled_path, deriv_dir)
+        with profiler.stage("derivatives_all", parent="processing"):
+            derivative_paths = compute_all_derivatives(dem_path, filled_path, deriv_dir)
 
         marker.write_text(f"processed\nderivatives: {len(derivative_paths)}\n")
+        profiler.log_summary()
+
         return ProcessedTile(
             tile_dir=tile_dir, dem_path=dem_path, filled_dem_path=filled_path,
             derivative_paths=derivative_paths, resolution_m=self.resolution,

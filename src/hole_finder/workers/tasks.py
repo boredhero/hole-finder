@@ -1,6 +1,15 @@
-"""Celery task definitions — includes full end-to-end pipeline orchestrator."""
+"""Celery task definitions — includes full end-to-end pipeline orchestrator.
+
+Thread/process safety notes:
+- Each Celery task runs in its own worker process (prefork pool).
+- PipelineProfiler is per-process, created fresh per task via new_profiler().
+- numpy arrays are read-only shared across threads within a pass run.
+- ProcessPoolExecutor (derivatives) spawns child processes that can't share
+  the parent's profiler — they return timing data which is fed back.
+"""
 
 import asyncio
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
@@ -9,6 +18,8 @@ import numpy as np
 import rasterio
 
 from hole_finder.config import settings
+from hole_finder.utils.logging import log
+from hole_finder.utils.perf import PipelineProfiler, get_profiler, new_profiler
 from hole_finder.workers.celery_app import app
 
 
@@ -82,18 +93,26 @@ def run_detection(self, dem_path: str, derivative_paths: dict, pass_config_name:
     from hole_finder.db.models import FeatureType as DBFeatureType
     from hole_finder.detection.runner import PassRunner
 
+    profiler = new_profiler(f"run_detection:{Path(dem_path).stem}")
     self.update_state(state="PROGRESS", meta={"percent": 0, "message": "Running detection"})
 
     # Load DEM + derivatives
-    with rasterio.open(dem_path) as src:
-        dem = src.read(1).astype(np.float32)
-        transform = src.transform
-        crs_code = src.crs.to_epsg() or 32617
+    with profiler.stage("load_rasters", parent="detection_io"):
+        with rasterio.open(dem_path) as src:
+            dem = src.read(1).astype(np.float32)
+            transform = src.transform
+            crs_code = src.crs.to_epsg() or 32617
 
-    derivs = {}
-    for name, path in derivative_paths.items():
-        with rasterio.open(path) as src:
-            derivs[name] = src.read(1).astype(np.float32)
+        derivs = {}
+        total_bytes = dem.nbytes
+        for name, path in derivative_paths.items():
+            with rasterio.open(path) as src:
+                arr = src.read(1).astype(np.float32)
+                derivs[name] = arr
+                total_bytes += arr.nbytes
+
+    log.info("rasters_loaded", dem_shape=list(dem.shape), derivatives=len(derivs),
+             total_mb=round(total_bytes / 1e6, 1))
 
     # Run passes
     config_path = Path(f"/app/configs/passes/{pass_config_name}.toml")
@@ -148,10 +167,12 @@ def run_detection(self, dem_path: str, derivative_paths: dict, pass_config_name:
             await session.commit()
             return len(good)
 
-    stored = asyncio.run(_store())
+    with profiler.stage("db_storage", parent="detection", detections=len(good)):
+        stored = asyncio.run(_store())
 
     self.update_state(state="PROGRESS", meta={"percent": 100, "message": "Complete"})
-    return {"raw_candidates": len(candidates), "stored_detections": stored}
+    summary = profiler.log_summary()
+    return {"raw_candidates": len(candidates), "stored_detections": stored, "profile": summary}
 
 
 @app.task(bind=True, queue="detect")
@@ -159,9 +180,15 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
     """Full end-to-end: discover tiles → download → process → detect → store.
 
     This is what gets called when a user submits a job from the UI.
+    Each invocation gets its own PipelineProfiler (process-local, no
+    cross-worker sharing). The profiler summary is stored in the job's
+    result_summary for inspection.
     """
     from hole_finder.db.engine import async_session_factory
     from hole_finder.db.models import Job, JobStatus
+    from hole_finder.ingest.manager import get_source
+
+    profiler = new_profiler(f"full_pipeline:{job_id[:8]}")
 
     def _update_job(status: str, progress: float, message: str = "", summary: dict | None = None):
         async def _do():
@@ -183,22 +210,23 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
         _update_job("RUNNING", 5, "Discovering tiles")
 
         # Discover tiles
-        if region_name:
-            from hole_finder.ingest.manager import discover_region
-            tiles = asyncio.run(discover_region(region_name))
-        elif bbox_geojson:
-            from shapely.geometry import shape
-            from hole_finder.ingest.manager import get_source
-            bbox = shape(bbox_geojson)
-            source = get_source("usgs_3dep")
-            tiles = []
-            async def _discover():
-                async for t in source.discover_tiles(bbox):
-                    tiles.append(t)
-            asyncio.run(_discover())
-        else:
-            _update_job("FAILED", 0, "No region or bbox specified")
-            return
+        with profiler.stage("tile_discovery") as ctx:
+            if region_name:
+                from hole_finder.ingest.manager import discover_region
+                tiles = asyncio.run(discover_region(region_name))
+            elif bbox_geojson:
+                from shapely.geometry import shape
+                bbox = shape(bbox_geojson)
+                source = get_source("usgs_3dep")
+                tiles = []
+                async def _discover():
+                    async for t in source.discover_tiles(bbox):
+                        tiles.append(t)
+                asyncio.run(_discover())
+            else:
+                _update_job("FAILED", 0, "No region or bbox specified")
+                return
+            ctx["tiles_found"] = len(tiles)
 
         if not tiles:
             _update_job("COMPLETED", 100, summary={"tiles": 0, "detections": 0})
@@ -209,19 +237,25 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
         # Download tiles (limit to first 10 for safety)
         tile_limit = min(len(tiles), 10)
         downloaded = []
-        for i, tile in enumerate(tiles[:tile_limit]):
-            progress = 10 + (i / tile_limit) * 30
-            _update_job("RUNNING", progress, f"Downloading tile {i+1}/{tile_limit}")
+        with profiler.stage("tile_downloads", tile_limit=tile_limit) as ctx:
+            for i, tile in enumerate(tiles[:tile_limit]):
+                progress = 10 + (i / tile_limit) * 30
+                _update_job("RUNNING", progress, f"Downloading tile {i+1}/{tile_limit}")
 
-            from hole_finder.ingest.manager import get_sources_for_region
-            source_name = "usgs_3dep"
-            source = get_source(source_name)
-            dest = settings.raw_dir / source_name
-            try:
-                path = asyncio.run(source.download_tile(tile, dest))
-                downloaded.append(str(path))
-            except Exception as e:
-                pass  # skip failed downloads
+                source_name = "usgs_3dep"
+                source = get_source(source_name)
+                dest = settings.raw_dir / source_name
+                t0 = time.perf_counter()
+                try:
+                    path = asyncio.run(source.download_tile(tile, dest))
+                    dl_elapsed = time.perf_counter() - t0
+                    downloaded.append(str(path))
+                    log.info("tile_downloaded", tile=tile.filename,
+                             elapsed_s=round(dl_elapsed, 2), index=i+1)
+                except Exception as e:
+                    log.warning("tile_download_failed", tile=tile.filename, error=str(e))
+            ctx["downloaded"] = len(downloaded)
+            ctx["failed"] = tile_limit - len(downloaded)
 
         if not downloaded:
             _update_job("FAILED", 40, "No tiles downloaded successfully")
@@ -233,29 +267,41 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
             progress = 40 + (i / len(downloaded)) * 30
             _update_job("RUNNING", progress, f"Processing tile {i+1}/{len(downloaded)}")
 
-            try:
-                result = process_tile(tile_path)
-            except Exception as e:
-                continue
+            with profiler.stage(f"process_tile_{i}", parent="tile_processing") as ctx:
+                try:
+                    result = process_tile(tile_path)
+                    ctx["dem_path"] = result["dem_path"]
+                except Exception as e:
+                    log.error("process_tile_failed", tile=tile_path, error=str(e))
+                    ctx["error"] = str(e)
+                    continue
 
             # Run detection
             progress = 70 + (i / len(downloaded)) * 25
             _update_job("RUNNING", progress, f"Detecting on tile {i+1}/{len(downloaded)}")
 
-            try:
-                det_result = run_detection(
-                    result["dem_path"],
-                    result["derivative_paths"],
-                    pass_config,
-                )
-                total_detections += det_result["stored_detections"]
-            except Exception as e:
-                continue
+            with profiler.stage(f"detect_tile_{i}", parent="tile_detection") as ctx:
+                try:
+                    det_result = run_detection(
+                        result["dem_path"],
+                        result["derivative_paths"],
+                        pass_config,
+                    )
+                    total_detections += det_result["stored_detections"]
+                    ctx["detections"] = det_result["stored_detections"]
+                    ctx["raw_candidates"] = det_result["raw_candidates"]
+                except Exception as e:
+                    log.error("detect_tile_failed", tile=tile_path, error=str(e))
+                    ctx["error"] = str(e)
+                    continue
+
+        profile_summary = profiler.log_summary()
 
         _update_job("COMPLETED", 100, summary={
             "tiles_discovered": len(tiles),
             "tiles_downloaded": len(downloaded),
             "total_detections": total_detections,
+            "profile": profile_summary,
         })
 
     except Exception as e:
