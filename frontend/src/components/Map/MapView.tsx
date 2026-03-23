@@ -192,8 +192,8 @@ function MVTLayerManager() {
         source: 'detections-mvt',
         'source-layer': 'outlines',
         paint: {
-          'fill-color': '#dd2245',
-          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0.0, 16, 0.15, 18, 0.25],
+          'fill-color': '#ff335c',
+          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0.1, 14, 0.2, 16, 0.3, 18, 0.4],
         },
       });
     }
@@ -204,9 +204,9 @@ function MVTLayerManager() {
         source: 'detections-mvt',
         'source-layer': 'outlines',
         paint: {
-          'line-color': '#ff335c',
-          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 1, 16, 2, 18, 3],
-          'line-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0.0, 16, 0.7, 18, 1.0],
+          'line-color': '#ff0033',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2, 14, 3, 16, 4, 18, 5],
+          'line-opacity': 1.0,
         },
       });
     }

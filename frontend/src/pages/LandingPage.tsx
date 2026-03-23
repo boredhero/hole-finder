@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import MapView from '../components/Map/MapView';
 import TopBar from '../components/Explore/TopBar';
@@ -146,10 +146,17 @@ export default function LandingPage() {
     }
   }, [userLocation, setTourDetections, setTourIndex, setActiveJobId, setSearchStale]);
 
-  // Watch for job completion
-  if (phase === 'processing' && jobProgress.status === 'COMPLETED') {
-    handleProcessingComplete();
-  }
+  // Watch for job completion — useEffect prevents infinite re-call loop
+  const completionHandled = useRef(false);
+  useEffect(() => {
+    if (phase === 'processing' && jobProgress.status === 'COMPLETED' && !completionHandled.current) {
+      completionHandled.current = true;
+      handleProcessingComplete();
+    }
+    if (phase !== 'processing') {
+      completionHandled.current = false;
+    }
+  }, [phase, jobProgress.status, handleProcessingComplete]);
 
   // Tour navigation
   const handleTourNext = useCallback(() => {
@@ -173,9 +180,16 @@ export default function LandingPage() {
   }, [tourIndex, tourDetections, setTourIndex, setTargetViewState]);
 
   const handleTourExit = useCallback(() => {
+    // Keep tour data — swiper stays in explore phase. User can dismiss it there.
     setSearchStale(true);
     setPhase('explore');
   }, [setSearchStale]);
+
+  // Dismiss swiper in explore (hides cards but doesn't clear data for re-show on search)
+  const handleSwiperDismiss = useCallback(() => {
+    setTourDetections([]);
+    setTourIndex(0);
+  }, [setTourDetections, setTourIndex]);
 
   // --- RENDER ---
 
@@ -277,7 +291,7 @@ export default function LandingPage() {
             direction={swipeDirection}
             onNext={handleTourNext}
             onPrev={handleTourPrev}
-            onExit={() => { setTourDetections([]); setTourIndex(0); }}
+            onExit={handleSwiperDismiss}
           />
         )}
       </div>
