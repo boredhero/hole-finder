@@ -4,21 +4,27 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@luma.gl/core': 9.1.10
+  '@luma.gl/engine': 9.1.10
+  '@luma.gl/shadertools': 9.1.10
+  '@luma.gl/webgl': 9.1.10
+
 importers:
 
   .:
     dependencies:
       '@deck.gl/aggregation-layers':
-        specifier: ^9.1.14
+        specifier: 9.1.14
         version: 9.1.14(@deck.gl/core@9.1.14)(@deck.gl/layers@9.1.14(@deck.gl/core@9.1.14)(@loaders.gl/core@4.3.4)(@luma.gl/core@9.1.10)(@luma.gl/engine@9.1.10(@luma.gl/core@9.1.10)(@luma.gl/shadertools@9.1.10(@luma.gl/core@9.1.10))))(@luma.gl/core@9.1.10)(@luma.gl/engine@9.1.10(@luma.gl/core@9.1.10)(@luma.gl/shadertools@9.1.10(@luma.gl/core@9.1.10)))
       '@deck.gl/core':
-        specifier: ^9.1.14
+        specifier: 9.1.14
         version: 9.1.14
       '@deck.gl/layers':
-        specifier: ^9.1.14
+        specifier: 9.1.14
         version: 9.1.14(@deck.gl/core@9.1.14)(@loaders.gl/core@4.3.4)(@luma.gl/core@9.1.10)(@luma.gl/engine@9.1.10(@luma.gl/core@9.1.10)(@luma.gl/shadertools@9.1.10(@luma.gl/core@9.1.10)))
       '@deck.gl/mapbox':
-        specifier: ^9.1.14
+        specifier: 9.1.14
         version: 9.1.14(@deck.gl/core@9.1.14)(@luma.gl/core@9.1.10)
       '@luma.gl/core':
         specifier: 9.1.10
@@ -39,7 +45,7 @@ importers:
         specifier: ^0.577.0
         version: 0.577.0(react@19.2.4)
       maplibre-gl:
-        specifier: ^4.7.1
+        specifier: 4.7.1
         version: 4.7.1
       react:
         specifier: ^19.2.4
@@ -48,7 +54,7 @@ importers:
         specifier: ^19.2.4
         version: 19.2.4(react@19.2.4)
       react-map-gl:
-        specifier: ^7.1.7
+        specifier: 7.1.7
         version: 7.1.7(mapbox-gl@3.20.0)(maplibre-gl@4.7.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       tailwindcss:
         specifier: ^4.2.2
@@ -174,8 +180,8 @@ packages:
     peerDependencies:
       '@deck.gl/core': ^9.1.0
       '@deck.gl/layers': ^9.1.0
-      '@luma.gl/core': ~9.1.9
-      '@luma.gl/engine': ~9.1.9
+      '@luma.gl/core': 9.1.10
+      '@luma.gl/engine': 9.1.10
 
   '@deck.gl/core@9.1.14':
     resolution: {integrity: sha512-tXakSSvi5g+EvxSsnnjoRO8z3XxHxISTRzzIqcs3AZuWHnDptK28y9iD0Da21ILop1IYLaWE1QTUe6IAdp/Wag==}
@@ -185,14 +191,14 @@ packages:
     peerDependencies:
       '@deck.gl/core': ^9.1.0
       '@loaders.gl/core': ^4.2.0
-      '@luma.gl/core': ~9.1.9
-      '@luma.gl/engine': ~9.1.9
+      '@luma.gl/core': 9.1.10
+      '@luma.gl/engine': 9.1.10
 
   '@deck.gl/mapbox@9.1.14':
     resolution: {integrity: sha512-l3c5NFwKjIOeVWMtqK5LR8MA4grRe7tpLctkovNIo+owPBoW+q7gAWBJ1hGFmE1sxVFhoqZx70FqBAT9Mqn1ow==}
     peerDependencies:
       '@deck.gl/core': ^9.1.0
-      '@luma.gl/core': ~9.1.9
+      '@luma.gl/core': 9.1.10
 
   '@emnapi/core@1.9.1':
     resolution: {integrity: sha512-mukuNALVsoix/w1BJwFzwXBN/dHeejQtuVzcDsfOEsdpCumXb/E9j8w11h5S54tT1xhifGfbbSm/ICrObRb3KA==}
@@ -305,18 +311,18 @@ packages:
   '@luma.gl/engine@9.1.10':
     resolution: {integrity: sha512-Og1cFpDGq8IUDI9Oaytnm08sdeitxcStsFrjiE4AejZQgx6OdHo+tE33M3WLAUzp6oQYQwl6r2USOhH4BuEiRg==}
     peerDependencies:
-      '@luma.gl/core': ~9.1.0
-      '@luma.gl/shadertools': ~9.1.0
+      '@luma.gl/core': 9.1.10
+      '@luma.gl/shadertools': 9.1.10
 
   '@luma.gl/shadertools@9.1.10':
     resolution: {integrity: sha512-ET2Vs9Vws5zkjSC07RWBVEFQ6EDP5yTiEZBnvblkb5y4wgjLHAgM5NBJw51Xb5BRBH0aC4piwP+2SnDA29dOlg==}
     peerDependencies:
-      '@luma.gl/core': ~9.1.0
+      '@luma.gl/core': 9.1.10
 
   '@luma.gl/webgl@9.1.10':
     resolution: {integrity: sha512-mwIsNEzxt6GW/fnCqBgJAorzFPi5c//3ZukKFHso+F1mvtHhTE4NQfA/pEvj4HBg/IdYkMvkoQsMrSn5+jko3A==}
     peerDependencies:
-      '@luma.gl/core': ~9.1.0
+      '@luma.gl/core': 9.1.10
 
   '@mapbox/geojson-rewind@0.5.2':
     resolution: {integrity: sha512-tJaT+RbYGJYStt7wI3cq4Nl4SXxG8W7JDG5DMJu97V25RnbNg3QtQtf+KD+VLjNpWKYsRvXDNmNrBgEETr1ifA==}

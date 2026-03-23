@@ -42,7 +42,7 @@ interface AppState {
 }
 
 export const useStore = create<AppState>((set) => ({
-  basemap: 'dark',
+  basemap: 'satellite',
   setBasemap: (b) => set({ basemap: b }),
   showHeatmap: false,
   toggleHeatmap: () => set((s) => ({ showHeatmap: !s.showHeatmap })),
