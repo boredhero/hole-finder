@@ -1,0 +1,17 @@
+{
+  "type": "Feature",
+  "properties": {
+    "name": "Allegheny County, PA",
+    "description": "Pittsburgh metro area, bituminous coal belt with karst terrain, mine portals, and sinkholes"
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[
+      [-80.3609, 40.1943],
+      [-79.6888, 40.1943],
+      [-79.6888, 40.6749],
+      [-80.3609, 40.6749],
+      [-80.3609, 40.1943]
+    ]]
+  }
+}

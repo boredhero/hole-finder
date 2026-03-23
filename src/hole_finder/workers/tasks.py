@@ -6,10 +6,17 @@ Thread/process safety notes:
 - numpy arrays are read-only shared across threads within a pass run.
 - ProcessPoolExecutor (derivatives) spawns child processes that can't share
   the parent's profiler — they return timing data which is fed back.
+
+asyncio + Celery note:
+  Celery tasks are synchronous. We use asyncio.run() to call async DB/ingest
+  code. Each asyncio.run() creates a NEW event loop, so we CANNOT use the
+  module-level async engine (its connection pool is bound to a different loop).
+  Instead, _async_session() creates a fresh engine+session per call.
 """
 
 import asyncio
 import time
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
@@ -21,6 +28,29 @@ from hole_finder.config import settings
 from hole_finder.utils.logging import log
 from hole_finder.utils.perf import PipelineProfiler, get_profiler, new_profiler
 from hole_finder.workers.celery_app import app
+
+
+@asynccontextmanager
+async def _async_session():
+    """Create a one-shot async session with a fresh engine.
+
+    Each asyncio.run() creates a new event loop. asyncpg connections are
+    bound to the loop they were created on. So we MUST create a new engine
+    per asyncio.run() call — reusing the module-level engine causes
+    'Future attached to a different loop' errors.
+
+    The engine is disposed after the session closes to avoid leaking
+    connection pools across event loops.
+    """
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    engine = create_async_engine(settings.database_url, echo=False, pool_size=2)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        async with factory() as session:
+            yield session
+    finally:
+        await engine.dispose()
 
 
 @app.task(bind=True, queue="ingest", max_retries=3)
@@ -88,7 +118,6 @@ def run_detection(self, dem_path: str, derivative_paths: dict, pass_config_name:
     from pyproj import Transformer
     from shapely.geometry import Point
 
-    from hole_finder.db.engine import async_session_factory
     from hole_finder.db.models import Detection
     from hole_finder.db.models import FeatureType as DBFeatureType
     from hole_finder.detection.runner import PassRunner
@@ -141,7 +170,7 @@ def run_detection(self, dem_path: str, derivative_paths: dict, pass_config_name:
             and (c.morphometrics.get("depth_m", 0) or c.morphometrics.get("lrm_anomaly_m", 0)) < 100]
 
     async def _store():
-        async with async_session_factory() as session:
+        async with _async_session() as session:
             batch = []
             for c in good:
                 lon, lat = transformer.transform(c.geometry.x, c.geometry.y)
@@ -184,7 +213,6 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
     cross-worker sharing). The profiler summary is stored in the job's
     result_summary for inspection.
     """
-    from hole_finder.db.engine import async_session_factory
     from hole_finder.db.models import Job, JobStatus
     from hole_finder.ingest.manager import get_source
 
@@ -192,7 +220,7 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
 
     def _update_job(status: str, progress: float, message: str = "", summary: dict | None = None):
         async def _do():
-            async with async_session_factory() as session:
+            async with _async_session() as session:
                 job = await session.get(Job, UUID(job_id))
                 if job:
                     job.status = JobStatus(status)
