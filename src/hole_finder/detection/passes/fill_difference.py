@@ -5,12 +5,15 @@ Does NOT compute fill-difference itself — that's done by the processing pipeli
 using WhiteboxTools (compiled Rust) and GDAL.
 
 Based on Wall et al. (2016) — 93% detection rate for known sinkholes.
+
+Vectorized: uses scipy.ndimage bulk operations across all labels at once
+instead of per-region Python loops. O(H*W) instead of O(N*H*W).
 """
 
 import numpy as np
-from scipy.ndimage import label as ndimage_label
 from shapely.geometry import Point
 
+from hole_finder.detection.array_backend import label, region_stats
 from hole_finder.detection.base import Candidate, DetectionPass, FeatureType, PassInput
 from hole_finder.detection.registry import register_pass
 
@@ -25,7 +28,7 @@ class FillDifferencePass(DetectionPass):
 
     @property
     def version(self) -> str:
-        return "0.2.0"
+        return "0.3.0"
 
     @property
     def required_derivatives(self) -> list[str]:
@@ -38,8 +41,8 @@ class FillDifferencePass(DetectionPass):
         min_area_m2 = config.get("min_area_m2", 25.0)
 
         resolution = abs(input_data.transform[0])
+        cell_area = resolution * resolution
 
-        # Use pre-computed fill_difference derivative
         diff = input_data.derivatives.get("fill_difference")
         if diff is None:
             return []
@@ -51,22 +54,25 @@ class FillDifferencePass(DetectionPass):
         if not np.any(depression_mask):
             return []
 
-        labeled, num_features = ndimage_label(depression_mask)
+        labeled, num_features = label(depression_mask)
+        if num_features == 0:
+            return []
+
+        # Vectorized bulk stats — GPU if available, CPU otherwise
+        stats = region_stats(diff, labeled, num_features, mask=depression_mask.astype(np.float32))
+        areas_px = stats["areas_px"]
+        areas_m2 = areas_px * cell_area
+        max_depths = stats["max_vals"]
+        centroids = stats["centroids"]
+
+        # Filter by area bounds (vectorized)
+        valid = (areas_m2 >= min_area_m2) & (areas_m2 <= max_area_m2)
 
         candidates = []
-        for i in range(1, num_features + 1):
-            region = labeled == i
-            area_pixels = np.sum(region)
-            area_m2 = area_pixels * resolution * resolution
-
-            if area_m2 < min_area_m2 or area_m2 > max_area_m2:
-                continue
-
-            rows, cols = np.where(region)
-            cy, cx = float(np.mean(rows)), float(np.mean(cols))
-            geo_x, geo_y = input_data.transform * (cx, cy)
-
-            depth = float(np.max(diff[region]))
+        for idx in np.flatnonzero(valid):
+            cy, cx = centroids[idx]
+            geo_x, geo_y = input_data.transform * (float(cx), float(cy))
+            depth = float(max_depths[idx])
 
             candidates.append(
                 Candidate(
@@ -75,8 +81,8 @@ class FillDifferencePass(DetectionPass):
                     feature_type=FeatureType.DEPRESSION,
                     morphometrics={
                         "depth_m": depth,
-                        "area_m2": area_m2,
-                        "area_pixels": float(area_pixels),
+                        "area_m2": float(areas_m2[idx]),
+                        "area_pixels": float(areas_px[idx]),
                     },
                 )
             )

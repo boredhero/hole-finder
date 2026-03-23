@@ -2,24 +2,18 @@
 
 Consumes pre-computed fill_difference and slope derivatives.
 Never computes derivatives itself.
+
+Vectorized: uses batch_morphometrics() to compute all 8 metrics for all
+regions in a single set of scipy.ndimage passes, then filters vectorized.
 """
 
 import numpy as np
-from scipy.ndimage import label as ndimage_label
+from scipy import ndimage
 from shapely.geometry import Point
 
 from hole_finder.detection.base import Candidate, DetectionPass, FeatureType, PassInput
 from hole_finder.detection.postprocess.classification import classify_candidate
-from hole_finder.detection.postprocess.morphometrics import (
-    compute_area,
-    compute_circularity,
-    compute_depth,
-    compute_elongation,
-    compute_k_parameter,
-    compute_perimeter,
-    compute_volume,
-    compute_wall_slope,
-)
+from hole_finder.detection.postprocess.morphometrics import batch_morphometrics
 from hole_finder.detection.registry import register_pass
 
 
@@ -32,7 +26,7 @@ class MorphometricFilterPass(DetectionPass):
 
     @property
     def version(self) -> str:
-        return "0.2.0"
+        return "0.3.0"
 
     @property
     def required_derivatives(self) -> list[str]:
@@ -60,44 +54,46 @@ class MorphometricFilterPass(DetectionPass):
         if not np.any(depression_mask):
             return []
 
-        labeled, num_features = ndimage_label(depression_mask)
+        labeled, num_features = ndimage.label(depression_mask)
+        if num_features == 0:
+            return []
+
+        # Batch-compute ALL morphometrics at once
+        metrics = batch_morphometrics(dem, fill_diff, slope, labeled, num_features, resolution)
+
+        # Vectorized filtering
+        valid = (
+            (metrics["area_m2"] >= min_area_m2)
+            & (metrics["area_m2"] <= max_area_m2)
+            & (metrics["circularity"] >= min_circularity)
+            & (metrics["depth_m"] >= min_depth_m)
+        )
 
         candidates = []
-        for i in range(1, num_features + 1):
-            mask = labeled == i
+        for idx in np.flatnonzero(valid):
+            cy, cx = metrics["centroids"][idx]
+            geo_x, geo_y = input_data.transform * (float(cx), float(cy))
 
-            depth = compute_depth(dem, mask)
-            area = compute_area(mask, resolution)
-            perimeter = compute_perimeter(mask, resolution)
-            circularity = compute_circularity(area, perimeter)
-            volume = compute_volume(dem, mask, resolution)
-            k_param = compute_k_parameter(area, depth, volume)
-            elongation = compute_elongation(mask)
-            wall_slope_deg = compute_wall_slope(slope, mask)
-
-            if area < min_area_m2 or area > max_area_m2:
-                continue
-            if circularity < min_circularity:
-                continue
-            if depth < min_depth_m:
-                continue
-
-            rows, cols = np.where(mask)
-            cy, cx = float(np.mean(rows)), float(np.mean(cols))
-            geo_x, geo_y = input_data.transform * (cx, cy)
+            depth = float(metrics["depth_m"][idx])
+            circ = float(metrics["circularity"][idx])
+            area = float(metrics["area_m2"][idx])
 
             depth_score = min(depth / 5.0, 1.0)
-            score = (depth_score + circularity) / 2.0
+            score = (depth_score + circ) / 2.0
 
             candidate = Candidate(
                 geometry=Point(geo_x, geo_y),
                 score=score,
                 feature_type=FeatureType.UNKNOWN,
                 morphometrics={
-                    "depth_m": depth, "area_m2": area, "perimeter_m": perimeter,
-                    "circularity": circularity, "volume_m3": volume,
-                    "k_parameter": k_param, "elongation": elongation,
-                    "wall_slope_deg": wall_slope_deg,
+                    "depth_m": depth,
+                    "area_m2": area,
+                    "perimeter_m": float(metrics["perimeter_m"][idx]),
+                    "circularity": circ,
+                    "volume_m3": float(metrics["volume_m3"][idx]),
+                    "k_parameter": float(metrics["k_parameter"][idx]),
+                    "elongation": float(metrics["elongation"][idx]),
+                    "wall_slope_deg": float(metrics["wall_slope_deg"][idx]),
                     "depth_area_ratio": depth / area if area > 0 else 0,
                 },
             )

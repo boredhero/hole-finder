@@ -42,6 +42,7 @@ def create_app() -> FastAPI:
     from hole_finder.api.routes import (
         comments,
         datasets,
+        debug,
         detections,
         exports,
         jobs,
@@ -61,6 +62,7 @@ def create_app() -> FastAPI:
     app.include_router(exports.router, prefix="/api")
     app.include_router(tiles.router, prefix="/api")
     app.include_router(raster_tiles.router, prefix="/api")
+    app.include_router(debug.router)
     app.include_router(websocket.router)
 
     @app.get("/api/health")

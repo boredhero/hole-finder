@@ -1,9 +1,12 @@
-"""TPI detection pass — consumes pre-computed TPI raster."""
+"""TPI detection pass — consumes pre-computed TPI raster.
+
+Vectorized: uses scipy.ndimage bulk operations across all labels at once.
+"""
 
 import numpy as np
-from scipy.ndimage import label as ndimage_label
 from shapely.geometry import Point
 
+from hole_finder.detection.array_backend import label, region_stats
 from hole_finder.detection.base import Candidate, DetectionPass, FeatureType, PassInput
 from hole_finder.detection.registry import register_pass
 
@@ -17,7 +20,7 @@ class TPIPass(DetectionPass):
 
     @property
     def version(self) -> str:
-        return "0.2.0"
+        return "0.3.0"
 
     @property
     def required_derivatives(self) -> list[str]:
@@ -29,6 +32,7 @@ class TPIPass(DetectionPass):
         min_area_pixels = config.get("min_area_pixels", 4)
 
         resolution = abs(input_data.transform[0])
+        cell_area = resolution * resolution
 
         tpi = input_data.derivatives.get("tpi")
         if tpi is None:
@@ -40,28 +44,31 @@ class TPIPass(DetectionPass):
         if not np.any(depression_mask):
             return []
 
-        labeled, num_features = ndimage_label(depression_mask)
+        labeled, num_features = label(depression_mask)
+        if num_features == 0:
+            return []
+
+        stats = region_stats(tpi, labeled, num_features, mask=depression_mask.astype(np.float32))
+        areas_px = stats["areas_px"]
+        min_tpis = stats["min_vals"]
+        centroids = stats["centroids"]
+
+        valid = areas_px >= min_area_pixels
 
         candidates = []
-        for i in range(1, num_features + 1):
-            region = labeled == i
-            if np.sum(region) < min_area_pixels:
-                continue
-
-            rows, cols = np.where(region)
-            cy, cx = float(np.mean(rows)), float(np.mean(cols))
-            geo_x, geo_y = input_data.transform * (cx, cy)
-
-            min_tpi = float(np.min(tpi[region]))
-            score = min(abs(min_tpi) / 5.0, 1.0)
-            area_m2 = float(np.sum(region)) * resolution * resolution
+        for idx in np.flatnonzero(valid):
+            cy, cx = centroids[idx]
+            geo_x, geo_y = input_data.transform * (float(cx), float(cy))
+            min_tpi_val = float(min_tpis[idx])
+            score = min(abs(min_tpi_val) / 5.0, 1.0)
+            area_m2 = float(areas_px[idx]) * cell_area
 
             candidates.append(
                 Candidate(
                     geometry=Point(geo_x, geo_y),
                     score=score,
                     feature_type=FeatureType.SINKHOLE,
-                    morphometrics={"min_tpi": min_tpi, "area_m2": area_m2},
+                    morphometrics={"min_tpi": min_tpi_val, "area_m2": area_m2},
                 )
             )
 

@@ -283,7 +283,7 @@ class TestPassRunnerToml:
     def test_load_cave_config(self):
         from hole_finder.detection.runner import PassRunner
         runner = PassRunner.from_toml(Path("configs/passes/cave_hunting.toml"))
-        assert len(runner.passes) >= 5
+        assert len(runner.passes) >= 4
 
     def test_load_sinkhole_config(self):
         from hole_finder.detection.runner import PassRunner

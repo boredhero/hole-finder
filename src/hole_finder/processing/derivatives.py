@@ -7,6 +7,7 @@ For unit tests: generate small test GeoTIFFs and run the same native pipeline.
 """
 
 import subprocess
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -29,31 +30,52 @@ def _get_wbt():
 
 
 # --- Individual derivative functions (each runs a native subprocess) ---
+# Each returns (output_path, elapsed_seconds) for profiling.
+# These run in child processes via ProcessPoolExecutor, so they can't
+# share the parent's PipelineProfiler — they return timing data instead.
 
+
+def _timed_derivative(fn):
+    """Wrapper that times a derivative function and returns (result, elapsed_s)."""
+    def wrapper(*args, **kwargs):
+        t0 = time.perf_counter()
+        result = fn(*args, **kwargs)
+        elapsed = time.perf_counter() - t0
+        return result, elapsed
+    wrapper.__name__ = fn.__name__
+    wrapper.__qualname__ = fn.__qualname__
+    return wrapper
+
+
+@_timed_derivative
 def compute_hillshade(dem: str, out: str) -> str:
     _run(["gdaldem", "hillshade", dem, out, "-az", "315", "-alt", "45",
           "-co", "COMPRESS=DEFLATE", "-co", "TILED=YES", "-q"])
     return out
 
 
+@_timed_derivative
 def compute_slope(dem: str, out: str) -> str:
     _run(["gdaldem", "slope", dem, out,
           "-co", "COMPRESS=DEFLATE", "-co", "TILED=YES", "-q"])
     return out
 
 
+@_timed_derivative
 def compute_tpi(dem: str, out: str) -> str:
     _run(["gdaldem", "TPI", dem, out,
           "-co", "COMPRESS=DEFLATE", "-co", "TILED=YES", "-q"])
     return out
 
 
+@_timed_derivative
 def compute_roughness(dem: str, out: str) -> str:
     _run(["gdaldem", "roughness", dem, out,
           "-co", "COMPRESS=DEFLATE", "-co", "TILED=YES", "-q"])
     return out
 
 
+@_timed_derivative
 def compute_svf(dem: str, out: str) -> str:
     wbt = _get_wbt()
     # WBT method name varies by version
@@ -67,6 +89,7 @@ def compute_svf(dem: str, out: str) -> str:
     return out
 
 
+@_timed_derivative
 def compute_lrm(dem: str, out: str, kernel: int = 100) -> str:
     wbt = _get_wbt()
     # WBT method name varies by version
@@ -81,18 +104,21 @@ def compute_lrm(dem: str, out: str, kernel: int = 100) -> str:
     return out
 
 
+@_timed_derivative
 def compute_profile_curvature(dem: str, out: str) -> str:
     wbt = _get_wbt()
     wbt.profile_curvature(dem, out)
     return out
 
 
+@_timed_derivative
 def compute_plan_curvature(dem: str, out: str) -> str:
     wbt = _get_wbt()
     wbt.plan_curvature(dem, out)
     return out
 
 
+@_timed_derivative
 def compute_fill_difference(dem: str, filled: str, out: str) -> str:
     """Subtract original DEM from filled DEM using rasterio (trivial operation)."""
     import rasterio
@@ -107,6 +133,7 @@ def compute_fill_difference(dem: str, filled: str, out: str) -> str:
     return out
 
 
+@_timed_derivative
 def fill_depressions(dem: str, out: str) -> str:
     wbt = _get_wbt()
     wbt.fill_depressions(dem, out)
@@ -125,10 +152,18 @@ def compute_all_derivatives(
 
     Each derivative is a separate process running a compiled tool.
     Results are cached permanently — skips if output file already exists.
+
+    Returns dict of {name: Path} and logs per-derivative timing.
+    Child processes can't share the parent's PipelineProfiler, so each
+    derivative function returns (result, elapsed_s) via @_timed_derivative.
+    Timing is collected here and fed back to the profiler if one is active.
     """
+    from hole_finder.utils.perf import get_profiler
+
     output_dir.mkdir(parents=True, exist_ok=True)
     dem = str(dem_path)
     filled = str(filled_dem_path)
+    wall_start = time.perf_counter()
 
     # (name, output_path, function, args)
     tasks = [
@@ -149,9 +184,11 @@ def compute_all_derivatives(
 
     # Check cache first
     to_compute = []
+    cached_names = []
     for name, out_path, fn, args in tasks:
         if out_path.exists():
             results[name] = out_path
+            cached_names.append(name)
         else:
             to_compute.append((name, fn, args, out_path))
 
@@ -159,7 +196,16 @@ def compute_all_derivatives(
         log.info("all_derivatives_cached", count=len(results))
         return results
 
-    log.info("computing_derivatives", cached=len(results), remaining=len(to_compute))
+    log.info(
+        "computing_derivatives",
+        cached=len(results),
+        remaining=len(to_compute),
+        max_workers=min(max_workers, len(to_compute)),
+        names=[t[0] for t in to_compute],
+    )
+
+    profiler = get_profiler()
+    timings: list[tuple[str, float]] = []
 
     # Run uncached derivatives in parallel
     with ProcessPoolExecutor(max_workers=min(max_workers, len(to_compute))) as executor:
@@ -170,10 +216,39 @@ def compute_all_derivatives(
         for future in as_completed(futures):
             name, out_path = futures[future]
             try:
-                future.result()
+                _result_path, elapsed_s = future.result()
                 results[name] = out_path
-                log.info("derivative_done", name=name)
+                timings.append((name, elapsed_s))
+                log.info("derivative_done", name=name, elapsed_s=round(elapsed_s, 3))
+                if profiler:
+                    profiler.record(name, elapsed_s, parent="derivatives")
             except Exception as e:
                 log.error("derivative_failed", name=name, error=str(e))
+
+    wall_elapsed = time.perf_counter() - wall_start
+    cpu_total = sum(t for _, t in timings)
+
+    # Sort by slowest-first for the summary
+    timings.sort(key=lambda x: x[1], reverse=True)
+    timing_summary = {name: round(t, 3) for name, t in timings}
+
+    log.info(
+        "derivatives_complete",
+        wall_time_s=round(wall_elapsed, 3),
+        cpu_total_s=round(cpu_total, 3),
+        parallelism_ratio=round(cpu_total / wall_elapsed, 1) if wall_elapsed > 0 else 0,
+        computed=len(timings),
+        cached=len(cached_names),
+        slowest=timings[0][0] if timings else None,
+        slowest_s=round(timings[0][1], 3) if timings else 0,
+        per_derivative=timing_summary,
+    )
+
+    if profiler:
+        profiler.record(
+            "derivatives_total", wall_elapsed, parent=None,
+            computed=len(timings), cached=len(cached_names),
+            parallelism_ratio=round(cpu_total / wall_elapsed, 1) if wall_elapsed > 0 else 0,
+        )
 
     return results

@@ -10,7 +10,7 @@ dependencies = [
     # Geospatial core
     # "pdal>=3.4",  # requires system PDAL; installed on remote worker only
     "rasterio>=1.3",
-    "numpy>=1.26",
+    "numpy>=2.0",
     "scipy>=1.12",
     "shapely>=2.0",
     "geopandas>=0.14",
@@ -61,6 +61,9 @@ gpu = [
     "torchvision>=0.18.0",
     "segmentation-models-pytorch>=0.3.4",
     "ultralytics>=8.2.0",
+    # CuPy for GPU-accelerated array ops. Install the right package for your GPU:
+    #   ROCm: pip install cupy-rocm-6-0  (or cupy-rocm-5-0 for ROCm 5.x)
+    #   CUDA: pip install cupy-cuda12x   (or cupy-cuda11x for CUDA 11.x)
 ]
 dev = [
     "pytest>=8.1",
