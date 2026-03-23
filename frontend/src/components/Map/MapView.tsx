@@ -337,7 +337,7 @@ export default function MapView() {
       }}
       terrain={show3DTerrain && basemap !== 'lidar' ? { source: 'terrain-source', exaggeration: terrainExaggeration } : undefined}
     >
-      <DeckGLOverlay layers={heatmapLayers} />
+      {heatmapLayers.length > 0 && <DeckGLOverlay layers={heatmapLayers} />}
       <MVTLayerManager />
       <FlyToHandler />
       <DrawControl
