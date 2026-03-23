@@ -116,7 +116,10 @@ def run_detection(self, dem_path: str, derivative_paths: dict, pass_config_name:
         "unknown": DBFeatureType.UNKNOWN,
     }
 
-    good = [c for c in candidates if c.score > 0.4 and c.morphometrics.get("area_m2", 0) > 50]
+    good = [c for c in candidates
+            if c.score > 0.4
+            and c.morphometrics.get("area_m2", 0) > 50
+            and (c.morphometrics.get("depth_m", 0) or c.morphometrics.get("lrm_anomaly_m", 0)) < 100]
 
     async def _store():
         async with async_session_factory() as session:
@@ -127,7 +130,7 @@ def run_detection(self, dem_path: str, derivative_paths: dict, pass_config_name:
                     feature_type=ft_map.get(c.feature_type.value, DBFeatureType.UNKNOWN),
                     geometry=from_shape(Point(lon, lat), srid=4326),
                     confidence=c.score,
-                    depth_m=c.morphometrics.get("depth_m"),
+                    depth_m=c.morphometrics.get("depth_m") or c.morphometrics.get("lrm_anomaly_m"),
                     area_m2=c.morphometrics.get("area_m2"),
                     circularity=c.morphometrics.get("circularity"),
                     wall_slope_deg=c.morphometrics.get("wall_slope_deg"),
