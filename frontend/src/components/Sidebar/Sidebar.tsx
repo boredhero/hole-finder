@@ -26,8 +26,8 @@ export default function Sidebar() {
       {/* Mobile toggle button */}
       {!sidebarOpen && (
         <button onClick={() => setSidebarOpen(true)}
-          className="fixed top-3 left-3 z-50 bg-slate-800/90 backdrop-blur p-2 rounded-lg shadow-lg md:hidden">
-          <Menu size={20} className="text-white" />
+          className="fixed top-4 left-4 z-50 bg-slate-800/90 backdrop-blur p-3 rounded-xl shadow-lg md:hidden">
+          <Menu size={22} className="text-white" />
         </button>
       )}
 
@@ -42,13 +42,13 @@ export default function Sidebar() {
         ${sidebarOpen ? 'translate-y-0 md:translate-x-0' : 'translate-y-full md:-translate-x-full'}
       `}>
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700 flex-shrink-0">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700 flex-shrink-0">
           <div>
-            <h2 className="text-sm font-bold text-white tracking-wide">HOLE FINDER</h2>
+            <h2 className="text-base font-bold text-white tracking-wide">HOLE FINDER</h2>
             <VersionTag />
           </div>
           <button onClick={() => setSidebarOpen(false)} className="text-slate-400 hover:text-white md:hidden">
-            <X size={18} />
+            <X size={22} />
           </button>
         </div>
 
@@ -59,11 +59,11 @@ export default function Sidebar() {
             const hasNotification = tab.id === 'detail' && selectedDetection;
             return (
               <button key={tab.id} onClick={() => setActivePanel(tab.id)}
-                className={`flex-1 flex flex-col items-center gap-0.5 py-2 text-xs transition-colors relative
+                className={`flex-1 flex flex-col items-center gap-1 py-3 text-sm transition-colors relative
                   ${isActive ? 'text-blue-400 border-b-2 border-blue-400' : 'text-slate-500 hover:text-slate-300'}`}>
-                <tab.icon size={16} />
+                <tab.icon size={18} />
                 <span>{tab.label}</span>
-                {hasNotification && <span className="absolute top-1 right-1/4 w-1.5 h-1.5 bg-blue-400 rounded-full" />}
+                {hasNotification && <span className="absolute top-2 right-1/4 w-2 h-2 bg-blue-400 rounded-full" />}
               </button>
             );
           })}
@@ -87,26 +87,26 @@ function DetectionList() {
   const setSelectedDetection = useStore((s) => s.setSelectedDetection);
 
   return (
-    <div className="p-4">
-      <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-2">
+    <div className="p-5">
+      <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">
         {detections.length} detections in view
       </h3>
-      <div className="flex flex-col gap-1 max-h-[50vh] overflow-y-auto">
+      <div className="flex flex-col gap-1.5 max-h-[50vh] overflow-y-auto">
         {detections.slice(0, 100).map((d: any) => (
           <button key={d.id} onClick={() => setSelectedDetection(d)}
-            className="flex items-center gap-2 p-2 rounded bg-slate-800 hover:bg-slate-700 text-left transition-colors">
-            <span className="w-2 h-2 rounded-full flex-shrink-0"
+            className="flex items-center gap-3 p-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-left transition-colors">
+            <span className="w-3 h-3 rounded-full flex-shrink-0"
               style={{ backgroundColor: FEATURE_COLORS[d.feature_type as keyof typeof FEATURE_COLORS] || '#6b7280' }} />
-            <span className="text-xs text-slate-200 truncate flex-1">
+            <span className="text-sm text-slate-200 truncate flex-1">
               {d.feature_type?.replace(/_/g, ' ') || 'unknown'}
             </span>
-            <span className="text-xs text-slate-400 font-mono">
+            <span className="text-sm text-slate-400 font-mono">
               {(d.confidence * 100).toFixed(0)}%
             </span>
           </button>
         ))}
         {detections.length > 100 && (
-          <p className="text-xs text-slate-500 text-center py-2">+{detections.length - 100} more</p>
+          <p className="text-sm text-slate-500 text-center py-3">+{detections.length - 100} more</p>
         )}
       </div>
     </div>
@@ -123,5 +123,5 @@ function VersionTag() {
     staleTime: 300_000,
   });
   if (!data) return null;
-  return <span className="text-xs text-slate-500">v{data.version}</span>;
+  return <span className="text-sm text-slate-500">v{data.version}</span>;
 }

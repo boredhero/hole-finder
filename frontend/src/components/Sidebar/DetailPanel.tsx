@@ -19,39 +19,39 @@ export default function DetailPanel() {
     },
   });
 
-  if (!detection) return <div className="p-4 text-slate-400 text-sm">No detection selected</div>;
+  if (!detection) return <div className="p-6 text-slate-400 text-base">No detection selected</div>;
 
   const m = detection.morphometrics || {};
   const color = FEATURE_COLORS[detection.feature_type] || '#6b7280';
 
   return (
-    <div className="flex flex-col gap-3 p-4">
+    <div className="flex flex-col gap-4 p-5">
       {/* Header */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <button onClick={() => setSelectedDetection(null)} className="text-slate-400 hover:text-white">
-          <ArrowLeft size={18} />
+          <ArrowLeft size={22} />
         </button>
-        <span className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
-        <h3 className="font-semibold text-white text-sm">
+        <span className="w-4 h-4 rounded-full" style={{ backgroundColor: color }} />
+        <h3 className="font-semibold text-white text-base">
           {FEATURE_LABELS[detection.feature_type] || 'Unknown'}
         </h3>
-        <span className="ml-auto text-xs text-slate-400">
+        <span className="ml-auto text-sm font-mono text-slate-300">
           {(detection.confidence * 100).toFixed(0)}%
         </span>
       </div>
 
       {/* Confidence bar */}
-      <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+      <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
         <div className="h-full rounded-full transition-all" style={{ width: `${detection.confidence * 100}%`, backgroundColor: color }} />
       </div>
 
       {/* Coordinates */}
-      <div className="text-xs text-slate-400">
+      <div className="text-sm text-slate-400 font-mono">
         {detection.lat.toFixed(5)}, {detection.lon.toFixed(5)}
       </div>
 
       {/* Morphometrics */}
-      <div className="grid grid-cols-2 gap-2 text-xs">
+      <div className="grid grid-cols-2 gap-3">
         {detection.depth_m != null && <Stat label="Depth" value={`${detection.depth_m.toFixed(1)} m`} />}
         {detection.area_m2 != null && <Stat label="Area" value={`${detection.area_m2.toFixed(0)} m\u00B2`} />}
         {detection.circularity != null && <Stat label="Circularity" value={detection.circularity.toFixed(2)} />}
@@ -63,7 +63,7 @@ export default function DetailPanel() {
 
       {/* Source passes */}
       {detection.source_passes && (
-        <div className="text-xs">
+        <div className="text-sm">
           <span className="text-slate-400">Passes: </span>
           <span className="text-slate-200">
             {Array.isArray(detection.source_passes) ? detection.source_passes.join(', ') : JSON.stringify(detection.source_passes)}
@@ -72,36 +72,36 @@ export default function DetailPanel() {
       )}
 
       {/* Validation */}
-      <section className="border-t border-slate-700 pt-3 mt-1">
-        <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-2">Validate</h4>
+      <section className="border-t border-slate-700 pt-4 mt-2">
+        <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">Validate</h4>
         {detection.validated != null && (
-          <div className={`text-xs mb-2 ${detection.validated ? 'text-green-400' : 'text-red-400'}`}>
+          <div className={`text-sm mb-3 ${detection.validated ? 'text-green-400' : 'text-red-400'}`}>
             Currently: {detection.validated ? 'Confirmed' : 'Rejected'}
           </div>
         )}
         <textarea
           value={notes} onChange={(e) => setNotes(e.target.value)}
           placeholder="Notes (optional)..."
-          className="w-full bg-slate-800 border border-slate-600 rounded text-xs p-2 text-slate-200 resize-none h-16 mb-2"
+          className="w-full bg-slate-800 border border-slate-600 rounded-lg text-sm p-3 text-slate-200 resize-none h-20 mb-3"
         />
-        <div className="flex gap-2">
+        <div className="flex gap-2.5">
           <button onClick={() => validate.mutate('confirmed')}
-            className="flex-1 flex items-center justify-center gap-1 bg-green-700 hover:bg-green-600 text-white text-xs py-1.5 rounded transition-colors">
-            <CheckCircle size={14} /> Confirm
+            className="flex-1 flex items-center justify-center gap-2 bg-green-700 hover:bg-green-600 text-white text-sm py-2.5 rounded-lg transition-colors font-medium">
+            <CheckCircle size={16} /> Confirm
           </button>
           <button onClick={() => validate.mutate('rejected')}
-            className="flex-1 flex items-center justify-center gap-1 bg-red-700 hover:bg-red-600 text-white text-xs py-1.5 rounded transition-colors">
-            <XCircle size={14} /> Reject
+            className="flex-1 flex items-center justify-center gap-2 bg-red-700 hover:bg-red-600 text-white text-sm py-2.5 rounded-lg transition-colors font-medium">
+            <XCircle size={16} /> Reject
           </button>
           <button onClick={() => validate.mutate('uncertain')}
-            className="flex-1 flex items-center justify-center gap-1 bg-slate-600 hover:bg-slate-500 text-white text-xs py-1.5 rounded transition-colors">
-            <HelpCircle size={14} /> Unsure
+            className="flex-1 flex items-center justify-center gap-2 bg-slate-600 hover:bg-slate-500 text-white text-sm py-2.5 rounded-lg transition-colors font-medium">
+            <HelpCircle size={16} /> Unsure
           </button>
         </div>
       </section>
 
       {/* Save / Highlight */}
-      <section className="border-t border-slate-700 pt-3 mt-1">
+      <section className="border-t border-slate-700 pt-4 mt-2">
         <button
           onClick={() => {
             fetch(`/api/detections/${detection.id}/save`, {
@@ -110,8 +110,8 @@ export default function DetailPanel() {
               body: JSON.stringify({ label: 'Interesting', color: '#f59e0b' }),
             }).then(() => qc.invalidateQueries({ queryKey: ['saved'] }));
           }}
-          className="w-full flex items-center justify-center gap-1 bg-amber-700 hover:bg-amber-600 text-white text-xs py-1.5 rounded transition-colors">
-          <Bookmark size={14} /> Save Detection
+          className="w-full flex items-center justify-center gap-2 bg-amber-700 hover:bg-amber-600 text-white text-sm py-2.5 rounded-lg transition-colors font-medium">
+          <Bookmark size={16} /> Save Detection
         </button>
       </section>
 
@@ -149,27 +149,27 @@ function CommentsSection({ detectionId }: { detectionId: string }) {
   });
 
   return (
-    <section className="border-t border-slate-700 pt-3 mt-1">
-      <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1">
-        <MessageSquare size={12} /> Comments ({comments.length})
+    <section className="border-t border-slate-700 pt-4 mt-2">
+      <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+        <MessageSquare size={16} /> Comments ({comments.length})
       </h4>
 
       {comments.map((c: any) => (
-        <div key={c.id} className="bg-slate-800 rounded p-2 mb-1 text-xs">
-          <div className="text-slate-200">{c.text}</div>
-          <div className="text-slate-500 text-xs mt-0.5">{c.author} &middot; {new Date(c.created_at).toLocaleDateString()}</div>
+        <div key={c.id} className="bg-slate-800 rounded-lg p-3 mb-2">
+          <div className="text-sm text-slate-200">{c.text}</div>
+          <div className="text-xs text-slate-500 mt-1">{c.author} &middot; {new Date(c.created_at).toLocaleDateString()}</div>
         </div>
       ))}
 
-      <div className="flex gap-1 mt-2">
+      <div className="flex gap-2 mt-3">
         <input value={author} onChange={(e) => setAuthor(e.target.value)}
-          placeholder="Name" className="w-16 bg-slate-800 border border-slate-600 rounded text-xs p-1 text-slate-200" />
+          placeholder="Name" className="w-20 bg-slate-800 border border-slate-600 rounded-lg text-sm p-2.5 text-slate-200" />
         <input value={text} onChange={(e) => setText(e.target.value)}
-          placeholder="Add comment..." className="flex-1 bg-slate-800 border border-slate-600 rounded text-xs p-1 text-slate-200"
+          placeholder="Add comment..." className="flex-1 bg-slate-800 border border-slate-600 rounded-lg text-sm p-2.5 text-slate-200"
           onKeyDown={(e) => e.key === 'Enter' && text && addComment.mutate()} />
         <button onClick={() => text && addComment.mutate()} disabled={!text}
-          className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-2 rounded">
-          <Send size={12} />
+          className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-3 rounded-lg">
+          <Send size={16} />
         </button>
       </div>
     </section>
@@ -178,9 +178,9 @@ function CommentsSection({ detectionId }: { detectionId: string }) {
 
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="bg-slate-800 rounded p-2">
-      <div className="text-slate-400 text-xs uppercase">{label}</div>
-      <div className="text-slate-100 font-mono text-sm">{value}</div>
+    <div className="bg-slate-800 rounded-lg p-3">
+      <div className="text-slate-400 text-xs uppercase tracking-wide">{label}</div>
+      <div className="text-slate-100 font-mono text-base mt-0.5">{value}</div>
     </div>
   );
 }
