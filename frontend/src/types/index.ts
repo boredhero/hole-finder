@@ -1,4 +1,4 @@
-export type FeatureType = 'sinkhole' | 'cave_entrance' | 'mine_portal' | 'depression' | 'collapse_pit' | 'spring' | 'unknown';
+export type FeatureType = 'sinkhole' | 'cave_entrance' | 'mine_portal' | 'depression' | 'collapse_pit' | 'spring' | 'lava_tube' | 'salt_dome_collapse' | 'unknown';
 
 export interface Detection {
   id: string;
@@ -56,6 +56,8 @@ export const FEATURE_COLORS: Record<FeatureType, string> = {
   depression: '#8b5cf6',
   collapse_pit: '#eab308',
   spring: '#06b6d4',
+  lava_tube: '#a855f7',
+  salt_dome_collapse: '#dc2626',
   unknown: '#6b7280',
 };
 
@@ -66,5 +68,7 @@ export const FEATURE_LABELS: Record<FeatureType, string> = {
   depression: 'Depression',
   collapse_pit: 'Collapse Pit',
   spring: 'Spring',
+  lava_tube: 'Lava Tube',
+  salt_dome_collapse: 'Salt Dome Collapse',
   unknown: 'Unknown',
 };

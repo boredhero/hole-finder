@@ -26,6 +26,24 @@
     {"name": "Zane Shawnee Caverns", "lat": 40.3796, "lon": -83.6366, "type": "cave_entrance", "state": "OH", "county": "Logan", "confidence": "high"},
 
     {"name": "Howe Caverns", "lat": 42.6962, "lon": -74.3986, "type": "cave_entrance", "state": "NY", "county": "Schoharie", "confidence": "very_high"},
-    {"name": "Lockport Cave", "lat": 43.1706, "lon": -78.6903, "type": "cave_entrance", "state": "NY", "county": "Niagara", "confidence": "high"}
+    {"name": "Lockport Cave", "lat": 43.1706, "lon": -78.6903, "type": "cave_entrance", "state": "NY", "county": "Niagara", "confidence": "high"},
+
+    {"name": "Linville Caverns", "lat": 35.9192, "lon": -81.9386, "type": "cave_entrance", "state": "NC", "county": "McDowell", "confidence": "very_high"},
+    {"name": "Ray Mica Mine", "lat": 35.85, "lon": -82.22, "type": "mine_portal", "state": "NC", "county": "Yancey", "confidence": "medium"},
+    {"name": "Bat Cave NC", "lat": 35.4697, "lon": -82.278, "type": "cave_entrance", "state": "NC", "county": "Henderson", "confidence": "high"},
+
+    {"name": "Crystal Grottoes", "lat": 39.5033, "lon": -77.6533, "type": "cave_entrance", "state": "MD", "county": "Washington", "confidence": "very_high"},
+    {"name": "Western MD Coal Mine", "lat": 39.65, "lon": -79.0, "type": "mine_portal", "state": "MD", "county": "Allegany", "confidence": "medium"},
+
+    {"name": "Davis Pyrite Mine", "lat": 42.6975, "lon": -72.8703, "type": "mine_portal", "state": "MA", "county": "Franklin", "confidence": "high"},
+    {"name": "Natural Bridge MA", "lat": 42.6819, "lon": -73.1478, "type": "cave_entrance", "state": "MA", "county": "Berkshire", "confidence": "high"},
+
+    {"name": "Bayou Corne Sinkhole", "lat": 30.0008, "lon": -91.1117, "type": "sinkhole", "state": "LA", "county": "Assumption", "confidence": "very_high"},
+    {"name": "Lake Peigneur", "lat": 30.0006, "lon": -91.9833, "type": "sinkhole", "state": "LA", "county": "Iberia", "confidence": "high"},
+
+    {"name": "Lava Beds NM Valentine Cave", "lat": 41.7147, "lon": -121.5083, "type": "cave_entrance", "state": "CA", "county": "Siskiyou", "confidence": "very_high"},
+    {"name": "Crystal Cave Sequoia", "lat": 36.5861, "lon": -118.8306, "type": "cave_entrance", "state": "CA", "county": "Tulare", "confidence": "very_high"},
+    {"name": "Moaning Cavern", "lat": 38.068, "lon": -120.466, "type": "cave_entrance", "state": "CA", "county": "Calaveras", "confidence": "very_high"},
+    {"name": "Lake Shasta Caverns", "lat": 40.7567, "lon": -122.3281, "type": "cave_entrance", "state": "CA", "county": "Shasta", "confidence": "high"}
   ]
 }

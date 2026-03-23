@@ -17,6 +17,8 @@ class FeatureType(StrEnum):
     DEPRESSION = "depression"
     COLLAPSE_PIT = "collapse_pit"
     SPRING = "spring"
+    LAVA_TUBE = "lava_tube"
+    SALT_DOME_COLLAPSE = "salt_dome_collapse"
     UNKNOWN = "unknown"
 
 

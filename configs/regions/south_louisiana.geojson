@@ -1,0 +1,17 @@
+{
+  "type": "Feature",
+  "properties": {
+    "name": "South Louisiana",
+    "description": "Salt dome collapse zone, Bayou Corne sinkhole area"
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[
+      [-92.5, 29.5],
+      [-90.5, 29.5],
+      [-90.5, 30.5],
+      [-92.5, 30.5],
+      [-92.5, 29.5]
+    ]]
+  }
+}

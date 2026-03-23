@@ -4,7 +4,7 @@ Source: USGS Open-File Report 2014-1156
 Download: https://pubs.usgs.gov/of/2014/1156/
 Format: Shapefile (269MB, polygon geometries for karst-prone areas).
 
-We filter to target states (PA, WV, OH, NY) and extract centroids.
+We filter to target states and extract centroids.
 """
 
 from pathlib import Path
@@ -17,7 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from hole_finder.db.models import FeatureType, GroundTruthSite, GroundTruthSource
 from hole_finder.utils.logging import log
 
-TARGET_STATES = {"PA", "WV", "OH", "NY", "Pennsylvania", "West Virginia", "Ohio", "New York"}
+TARGET_STATES = {
+    "PA", "WV", "OH", "NY", "NC", "MD", "MA", "LA", "CA",
+    "Pennsylvania", "West Virginia", "Ohio", "New York",
+    "North Carolina", "Maryland", "Massachusetts", "Louisiana", "California",
+}
 
 
 async def load_usgs_national(session: AsyncSession, data_dir: str) -> int:

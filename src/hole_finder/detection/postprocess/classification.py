@@ -13,6 +13,14 @@ def classify_candidate(candidate: Candidate) -> FeatureType:
     area = m.get("area_m2", 0)
     circularity = m.get("circularity", 0)
 
+    # Very large, shallow, irregular = salt dome collapse (LA)
+    if area > 10000 and depth < 5.0 and circularity < 0.3:
+        return FeatureType.SALT_DOME_COLLAPSE
+
+    # Elongated, moderate depth, large = lava tube collapse (CA)
+    if circularity < 0.2 and depth > 0.5 and area > 500:
+        return FeatureType.LAVA_TUBE
+
     # Very deep, small, circular = likely cave entrance or pit
     if depth > 3.0 and area < 500 and circularity > 0.4:
         return FeatureType.CAVE_ENTRANCE

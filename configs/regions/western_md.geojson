@@ -1,0 +1,17 @@
+{
+  "type": "Feature",
+  "properties": {
+    "name": "Western Maryland",
+    "description": "Hagerstown Valley karst, western MD coal mining regions"
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[
+      [-79.5, 39.2],
+      [-77.2, 39.2],
+      [-77.2, 39.7],
+      [-79.5, 39.7],
+      [-79.5, 39.2]
+    ]]
+  }
+}

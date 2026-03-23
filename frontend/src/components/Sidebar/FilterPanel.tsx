@@ -2,7 +2,7 @@ import { useStore } from '../../store';
 import { FEATURE_COLORS, FEATURE_LABELS } from '../../types';
 import type { Basemap, FeatureType } from '../../types';
 
-const ALL_TYPES: FeatureType[] = ['cave_entrance', 'mine_portal', 'sinkhole', 'depression', 'collapse_pit', 'spring', 'unknown'];
+const ALL_TYPES: FeatureType[] = ['cave_entrance', 'mine_portal', 'sinkhole', 'depression', 'collapse_pit', 'spring', 'lava_tube', 'salt_dome_collapse', 'unknown'];
 const BASEMAPS: { value: Basemap; label: string }[] = [
   { value: 'satellite', label: 'Satellite' },
   { value: 'lidar', label: 'LiDAR' },

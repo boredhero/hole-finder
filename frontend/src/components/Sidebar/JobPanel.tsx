@@ -4,8 +4,13 @@ import { useStore } from '../../store';
 import { Loader2, Play, X, PenTool, Clock, CheckCircle2, AlertCircle, Ban } from 'lucide-react';
 import type { Job } from '../../types';
 
-const CONFIGS = ['sinkhole_survey', 'cave_hunting', 'mine_detection'];
-const REGIONS = ['western_pa', 'eastern_pa', 'west_virginia', 'eastern_ohio', 'upstate_ny'];
+const CONFIGS = ['sinkhole_survey', 'cave_hunting', 'mine_detection', 'salt_dome_detection', 'lava_tube_detection'];
+const REGIONS = [
+  'western_pa', 'eastern_pa', 'west_virginia', 'eastern_ohio', 'upstate_ny',
+  'western_nc', 'western_md', 'western_ma',
+  'south_louisiana', 'north_louisiana',
+  'northern_ca_lava', 'sierra_nevada', 'southern_ca_desert',
+];
 
 export default function JobPanel() {
   const { data: jobs = [], isLoading } = useJobs();
