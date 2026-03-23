@@ -8,7 +8,7 @@ For unit tests: generate small test GeoTIFFs and run the same native pipeline.
 
 import subprocess
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from hole_finder.utils.logging import log
@@ -207,8 +207,12 @@ def compute_all_derivatives(
     profiler = get_profiler()
     timings: list[tuple[str, float]] = []
 
-    # Run uncached derivatives in parallel
-    with ProcessPoolExecutor(max_workers=min(max_workers, len(to_compute))) as executor:
+    # Run uncached derivatives in parallel via threads.
+    # Each derivative calls a native subprocess (GDAL/WBT) that releases the GIL,
+    # so threads give real parallelism. We use ThreadPoolExecutor instead of
+    # ProcessPoolExecutor because Celery workers are daemonic processes that
+    # cannot spawn child processes.
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(to_compute))) as executor:
         futures = {}
         for name, fn, args, out_path in to_compute:
             futures[executor.submit(fn, *args)] = (name, out_path)
