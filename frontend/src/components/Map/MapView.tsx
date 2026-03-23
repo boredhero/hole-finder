@@ -407,7 +407,7 @@ export default function MapView() {
           });
         }
       }}
-      terrain={show3DTerrain && basemap !== 'lidar' ? { source: 'terrain-source', exaggeration: terrainExaggeration } : undefined}
+      terrain={show3DTerrain ? { source: 'terrain-source', exaggeration: terrainExaggeration } : undefined}
     >
       {heatmapLayers.length > 0 && <DeckGLOverlay layers={heatmapLayers} />}
       <MVTLayerManager />
