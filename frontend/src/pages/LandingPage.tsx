@@ -269,13 +269,10 @@ export default function LandingPage() {
     );
   }
 
-  // Processing phase: map loads underneath, processing screen on top
+  // Processing phase: no map yet — terrain cache isn't warm
   if (phase === 'processing') {
     return (
-      <div className="relative h-full w-full">
-        <div className="absolute inset-0">
-          <MapView />
-        </div>
+      <div className="relative h-full w-full bg-slate-950">
         <ProcessingScreen
           progress={jobProgress.progress}
           stage={jobProgress.stage}
