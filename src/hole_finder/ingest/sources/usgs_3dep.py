@@ -1,14 +1,18 @@
-"""USGS 3DEP LiDAR source via STAC API + COPC from AWS/Planetary Computer.
+"""USGS 3DEP LiDAR source via STAC API + COPC from Planetary Computer.
 
 Data is free and requires no API key. Uses pystac-client to query the
-Microsoft Planetary Computer STAC catalog for 3DEP COPC tiles, then
-downloads them via HTTP (or S3 with --no-sign-request).
+Microsoft Planetary Computer STAC catalog for 3DEP COPC tiles.
+
+Download URLs require SAS token signing (Azure blob storage has public
+access disabled). The planetary-computer SDK handles this automatically
+via a free, unauthenticated token endpoint.
 """
 
 from collections.abc import AsyncIterator
 from pathlib import Path
 
 import httpx
+import planetary_computer
 from shapely.geometry import Polygon, shape
 
 from hole_finder.ingest.sources.base import DataSource, TileInfo
@@ -113,7 +117,12 @@ class USGS3DEPSource(DataSource):
             return None
 
     async def download_tile(self, tile: TileInfo, dest_dir: Path) -> Path:
-        """Download a COPC tile via HTTP."""
+        """Download a COPC tile via HTTP with Planetary Computer SAS signing.
+
+        Azure blob storage requires a SAS token. planetary_computer.sign()
+        appends the token to the URL. Tokens are free, no account needed,
+        cached for ~24h by the SDK.
+        """
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest_path = dest_dir / tile.filename
 
@@ -121,12 +130,14 @@ class USGS3DEPSource(DataSource):
             log.info("tile_exists", path=str(dest_path))
             return dest_path
 
-        log.info("downloading_tile", url=tile.url, dest=str(dest_path))
+        # Sign the URL with a Planetary Computer SAS token
+        signed_url = planetary_computer.sign(tile.url)
+        log.info("downloading_tile", url=signed_url[:120], dest=str(dest_path))
 
         async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
-            async with client.stream("GET", tile.url) as response:
+            async with client.stream("GET", signed_url) as response:
                 response.raise_for_status()
-                int(response.headers.get("content-length", 0))
+                content_length = int(response.headers.get("content-length", 0))
 
                 with open(dest_path, "wb") as f:
                     downloaded = 0
@@ -134,5 +145,6 @@ class USGS3DEPSource(DataSource):
                         f.write(chunk)
                         downloaded += len(chunk)
 
-        log.info("download_complete", path=str(dest_path), bytes=downloaded)
+        log.info("download_complete", path=str(dest_path),
+                 bytes=downloaded, expected=content_length)
         return dest_path
