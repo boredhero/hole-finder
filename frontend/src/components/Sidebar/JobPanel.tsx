@@ -15,7 +15,10 @@ export default function JobPanel() {
   const drawnAOI = useStore((s) => s.drawnAOI);
   const [region, setRegion] = useState(REGIONS[0]);
   const [config, setConfig] = useState(CONFIGS[0]);
-  const [useDrawn, setUseDrawn] = useState(false);
+  const [inputMode, setInputMode] = useState<'region' | 'draw' | 'pin'>('region');
+  const [pinLat, setPinLat] = useState('');
+  const [pinLon, setPinLon] = useState('');
+  const [pinRadius, setPinRadius] = useState(2); // km
 
   const activeJobs = jobs.filter((j: Job) => j.status === 'RUNNING' || j.status === 'PENDING');
   const completedJobs = jobs.filter((j: Job) => j.status !== 'RUNNING' && j.status !== 'PENDING');
@@ -57,22 +60,43 @@ export default function JobPanel() {
         <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-2">New Job</h3>
 
         <div className="flex gap-1 mb-2">
-          <button onClick={() => { setUseDrawn(false); setDrawingAOI(false); }}
-            className={`flex-1 text-xs py-1.5 rounded ${!useDrawn ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+          <button onClick={() => { setInputMode('region'); setDrawingAOI(false); }}
+            className={`flex-1 text-xs py-1.5 rounded ${inputMode === 'region' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
             Region
           </button>
-          <button onClick={() => { setUseDrawn(true); setDrawingAOI(true); }}
-            className={`flex-1 text-xs py-1.5 rounded flex items-center justify-center gap-1 ${useDrawn ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
-            <PenTool size={12} /> Draw AOI
+          <button onClick={() => { setInputMode('pin'); setDrawingAOI(false); }}
+            className={`flex-1 text-xs py-1.5 rounded flex items-center justify-center gap-1 ${inputMode === 'pin' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+            Pin + Radius
+          </button>
+          <button onClick={() => { setInputMode('draw'); setDrawingAOI(true); }}
+            className={`flex-1 text-xs py-1.5 rounded flex items-center justify-center gap-1 ${inputMode === 'draw' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+            <PenTool size={12} /> Draw
           </button>
         </div>
 
-        {!useDrawn ? (
+        {inputMode === 'region' && (
           <select value={region} onChange={(e) => setRegion(e.target.value)}
             className="w-full bg-slate-800 border border-slate-600 rounded text-sm p-2 text-slate-200 mb-2">
             {REGIONS.map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
           </select>
-        ) : (
+        )}
+        {inputMode === 'pin' && (
+          <div className="flex flex-col gap-1.5 mb-2">
+            <div className="flex gap-1.5">
+              <input value={pinLat} onChange={(e) => setPinLat(e.target.value)} placeholder="Latitude"
+                className="flex-1 bg-slate-800 border border-slate-600 rounded text-sm p-2 text-slate-200" type="number" step="0.001" />
+              <input value={pinLon} onChange={(e) => setPinLon(e.target.value)} placeholder="Longitude"
+                className="flex-1 bg-slate-800 border border-slate-600 rounded text-sm p-2 text-slate-200" type="number" step="0.001" />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400 whitespace-nowrap">Radius: {pinRadius} km</span>
+              <input type="range" min={0.5} max={10} step={0.5} value={pinRadius}
+                onChange={(e) => setPinRadius(parseFloat(e.target.value))}
+                className="flex-1 accent-blue-500" />
+            </div>
+          </div>
+        )}
+        {inputMode === 'draw' && (
           <div className="text-xs text-slate-400 mb-2 p-2 bg-slate-800 rounded">
             {drawnAOI ? '✓ AOI drawn on map' : 'Draw polygon on map...'}
           </div>
@@ -86,12 +110,24 @@ export default function JobPanel() {
         <button
           onClick={() => {
             const body: any = { job_type: 'full_pipeline', pass_config: config };
-            if (useDrawn && drawnAOI) body.bbox = drawnAOI;
-            else body.region_name = region;
+            if (inputMode === 'draw' && drawnAOI) {
+              body.bbox = drawnAOI;
+            } else if (inputMode === 'pin' && pinLat && pinLon) {
+              // Convert pin + radius to bbox polygon
+              const lat = parseFloat(pinLat);
+              const lon = parseFloat(pinLon);
+              const r = pinRadius / 111.32; // rough degrees
+              body.bbox = {
+                type: 'Polygon',
+                coordinates: [[[lon-r, lat-r], [lon+r, lat-r], [lon+r, lat+r], [lon-r, lat+r], [lon-r, lat-r]]],
+              };
+            } else {
+              body.region_name = region;
+            }
             createJob.mutate(body);
             setDrawingAOI(false);
           }}
-          disabled={createJob.isPending || (useDrawn && !drawnAOI)}
+          disabled={createJob.isPending || (inputMode === 'draw' && !drawnAOI) || (inputMode === 'pin' && (!pinLat || !pinLon))}
           className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm py-2 rounded transition-colors">
           {createJob.isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
           Submit Job
