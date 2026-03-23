@@ -271,7 +271,7 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
 
             async def _download_all():
                 import asyncio as aio
-                sem = aio.Semaphore(4)  # 4 concurrent downloads
+                sem = aio.Semaphore(16)  # 16 concurrent downloads (~678 Mbps available)
                 results = []
 
                 async def _dl(tile, idx):
