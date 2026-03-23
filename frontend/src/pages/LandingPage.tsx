@@ -4,6 +4,7 @@ import MapView from '../components/Map/MapView';
 import TopBar from '../components/Explore/TopBar';
 import BottomDrawer from '../components/Explore/BottomDrawer';
 import SearchButton from '../components/Explore/SearchButton';
+import SettingsPanel from '../components/Explore/SettingsPanel';
 import ProcessingScreen from '../components/Explore/ProcessingScreen';
 import ResultsSplash from '../components/Explore/ResultsSplash';
 import SwipeCard from '../components/Explore/SwipeCard';
@@ -257,6 +258,7 @@ export default function LandingPage() {
           <MapView />
         </div>
         <TopBar />
+        <SettingsPanel />
         <SearchButton />
         <BottomDrawer />
       </div>
