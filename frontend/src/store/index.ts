@@ -9,6 +9,10 @@ interface AppState {
   toggleHeatmap: () => void;
   showGroundTruth: boolean;
   toggleGroundTruth: () => void;
+  show3DTerrain: boolean;
+  toggle3DTerrain: () => void;
+  terrainExaggeration: number;
+  setTerrainExaggeration: (v: number) => void;
 
   // Sidebar
   sidebarOpen: boolean;
@@ -44,6 +48,10 @@ export const useStore = create<AppState>((set) => ({
   toggleHeatmap: () => set((s) => ({ showHeatmap: !s.showHeatmap })),
   showGroundTruth: true,
   toggleGroundTruth: () => set((s) => ({ showGroundTruth: !s.showGroundTruth })),
+  show3DTerrain: false,
+  toggle3DTerrain: () => set((s) => ({ show3DTerrain: !s.show3DTerrain })),
+  terrainExaggeration: 1.5,
+  setTerrainExaggeration: (v) => set({ terrainExaggeration: v }),
 
   sidebarOpen: true,
   setSidebarOpen: (open) => set({ sidebarOpen: open }),

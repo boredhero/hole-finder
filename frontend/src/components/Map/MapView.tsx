@@ -13,8 +13,8 @@ import type { Basemap, Detection, GroundTruthSite } from '../../types';
 import { FEATURE_COLORS } from '../../types';
 
 const BASEMAP_STYLES: Record<Basemap, string> = {
-  satellite: 'https://api.maptiler.com/maps/hybrid/style.json?key=get_your_own_OpIi9ZULNHzrESv6T2vL',
-  topo: 'https://api.maptiler.com/maps/topo-v2/style.json?key=get_your_own_OpIi9ZULNHzrESv6T2vL',
+  satellite: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
+  topo: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
   dark: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
 };
 
@@ -35,6 +35,8 @@ export default function MapView() {
   const basemap = useStore((s) => s.basemap);
   const showHeatmap = useStore((s) => s.showHeatmap);
   const showGroundTruth = useStore((s) => s.showGroundTruth);
+  const show3DTerrain = useStore((s) => s.show3DTerrain);
+  const terrainExaggeration = useStore((s) => s.terrainExaggeration);
   const setBbox = useStore((s) => s.setBbox);
   const setSelectedDetection = useStore((s) => s.setSelectedDetection);
   const setHoveredDetectionId = useStore((s) => s.setHoveredDetectionId);
@@ -135,9 +137,22 @@ export default function MapView() {
       mapStyle={BASEMAP_STYLES[basemap]}
       onMoveEnd={handleMoveEnd}
       onLoad={(evt) => {
-        const bounds = evt.target.getBounds();
+        const map = evt.target;
+        const bounds = map.getBounds();
         setBbox([bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]);
+
+        // Add terrain source for 3D
+        if (!map.getSource('terrain-source')) {
+          map.addSource('terrain-source', {
+            type: 'raster-dem',
+            tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            encoding: 'terrarium',
+            maxzoom: 15,
+          });
+        }
       }}
+      terrain={show3DTerrain ? { source: 'terrain-source', exaggeration: terrainExaggeration } : undefined}
       cursor={hoveredId ? 'pointer' : 'grab'}
     >
       <DeckGLOverlay layers={layers} />

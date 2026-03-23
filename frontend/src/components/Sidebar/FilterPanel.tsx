@@ -18,6 +18,10 @@ export default function FilterPanel() {
   const toggleHeatmap = useStore((s) => s.toggleHeatmap);
   const showGroundTruth = useStore((s) => s.showGroundTruth);
   const toggleGroundTruth = useStore((s) => s.toggleGroundTruth);
+  const show3DTerrain = useStore((s) => s.show3DTerrain);
+  const toggle3DTerrain = useStore((s) => s.toggle3DTerrain);
+  const terrainExaggeration = useStore((s) => s.terrainExaggeration);
+  const setTerrainExaggeration = useStore((s) => s.setTerrainExaggeration);
 
   const toggleType = (ft: FeatureType) => {
     const types = filters.featureTypes.includes(ft)
@@ -79,6 +83,18 @@ export default function FilterPanel() {
           <input type="checkbox" checked={showGroundTruth} onChange={toggleGroundTruth} className="rounded" />
           <span className="text-slate-200">Ground Truth Sites</span>
         </label>
+        <label className="flex items-center gap-2 cursor-pointer text-sm py-0.5">
+          <input type="checkbox" checked={show3DTerrain} onChange={toggle3DTerrain} className="rounded" />
+          <span className="text-slate-200">3D Terrain</span>
+        </label>
+        {show3DTerrain && (
+          <div className="ml-6 mt-1">
+            <span className="text-xs text-slate-400">Exaggeration: {terrainExaggeration.toFixed(1)}x</span>
+            <input type="range" min={0.5} max={5} step={0.5} value={terrainExaggeration}
+              onChange={(e) => setTerrainExaggeration(parseFloat(e.target.value))}
+              className="w-full accent-blue-500" />
+          </div>
+        )}
       </section>
     </div>
   );
