@@ -22,12 +22,26 @@ const SATELLITE_STYLE = {
       maxzoom: 18,
       attribution: 'Esri, Maxar, Earthstar Geographics',
     },
+    'carto-labels': {
+      type: 'raster' as const,
+      tiles: ['https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}@2x.png'],
+      tileSize: 256,
+      maxzoom: 18,
+      attribution: 'CARTO',
+    },
   },
-  layers: [{
-    id: 'satellite',
-    type: 'raster' as const,
-    source: 'esri-satellite',
-  }],
+  layers: [
+    {
+      id: 'satellite',
+      type: 'raster' as const,
+      source: 'esri-satellite',
+    },
+    {
+      id: 'labels',
+      type: 'raster' as const,
+      source: 'carto-labels',
+    },
+  ],
 };
 
 const LIDAR_STYLE = {
