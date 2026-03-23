@@ -223,7 +223,7 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
             async with _async_session() as session:
                 job = await session.get(Job, UUID(job_id))
                 if job:
-                    job.status = JobStatus(status)
+                    job.status = JobStatus(status.lower())
                     job.progress = progress
                     if status in ("COMPLETED", "FAILED"):
                         job.completed_at = datetime.now(UTC)
