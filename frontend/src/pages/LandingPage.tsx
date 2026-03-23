@@ -9,7 +9,7 @@ import SwipeCard from '../components/Explore/SwipeCard';
 import { useRegions } from '../hooks/useRegions';
 import { useJobProgress } from '../hooks/useJobProgress';
 import { useStore } from '../store';
-import { geocodeZip, getDetections, startConsumerScan } from '../api/client';
+import { geocodeZip, getDetections, startConsumerScan, warmTerrainCache } from '../api/client';
 import { geometryToBbox, formatRegionName } from '../utils';
 import { Locate, Map as MapIcon, Search, ArrowLeft, Settings2, Loader2, AlertCircle } from 'lucide-react';
 import type { Detection } from '../types';
@@ -143,12 +143,22 @@ export default function LandingPage() {
     }
 
     const r = 3 / 111.32;
-    getDetections({
-      west: center.lon - r, south: center.lat - r,
-      east: center.lon + r, north: center.lat + r,
+    const west = center.lon - r, south = center.lat - r;
+    const east = center.lon + r, north = center.lat + r;
+
+    // Warm terrain cache BEFORE loading the map — prevents DOMExceptions
+    // from uncached terrain tiles. Runs in parallel with detection fetch.
+    const warmPromise = warmTerrainCache(west, south, east, north)
+      .then((res) => console.log('[HoleFinder] Terrain cache warmed:', res))
+      .catch((err) => console.warn('[HoleFinder] Terrain warm failed (non-fatal):', err));
+
+    const detectPromise = getDetections({
+      west, south, east, north,
       min_confidence: 0.5,
       limit: 50,
-    }).then((data) => {
+    });
+
+    Promise.all([warmPromise, detectPromise]).then(([, data]) => {
       const dets: Detection[] = (data.features || []).map((f: any) => ({
         id: f.id,
         lon: f.geometry.coordinates[0],

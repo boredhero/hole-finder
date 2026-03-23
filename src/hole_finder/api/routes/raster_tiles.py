@@ -227,6 +227,68 @@ async def get_composited_terrain_tile(z: int, x: int, y: int):
     )
 
 
+@router.post("/raster/terrain/warm")
+async def warm_terrain_cache(
+    west: float, south: float, east: float, north: float,
+    min_zoom: int = 8, max_zoom: int = 15,
+):
+    """Pre-render and cache all terrain tiles for a bbox across zoom levels.
+
+    Called after processing completes to warm the cache before the map loads.
+    For a 3km radius area at z8-z15, this is typically 20-40 tiles.
+    """
+    import asyncio
+
+    cached = 0
+    rendered = 0
+    proxied = 0
+
+    for z in range(min_zoom, max_zoom + 1):
+        n = 2 ** z
+        # Convert bbox to tile range
+        x_min = int((west + 180) / 360 * n)
+        x_max = int((east + 180) / 360 * n)
+        y_min = int((1 - math.log(math.tan(math.radians(north)) + 1 / math.cos(math.radians(north))) / math.pi) / 2 * n)
+        y_max = int((1 - math.log(math.tan(math.radians(south)) + 1 / math.cos(math.radians(south))) / math.pi) / 2 * n)
+
+        for x in range(x_min, x_max + 1):
+            for y in range(y_min, y_max + 1):
+                cache_dir = settings.data_dir / "tile_cache" / "terrain" / str(z) / str(x)
+                tile_path = cache_dir / f"{y}.png"
+
+                if tile_path.exists():
+                    cached += 1
+                    continue
+
+                bbox = _tile_to_bbox(z, x, y)
+                dem_path = _find_dem_for_tile(*bbox)
+
+                if dem_path:
+                    try:
+                        png_bytes = _render_terrain_tile_from_dem(dem_path, z, x, y)
+                        cache_dir.mkdir(parents=True, exist_ok=True)
+                        tile_path.write_bytes(png_bytes)
+                        rendered += 1
+                        continue
+                    except Exception:
+                        pass
+
+                # Proxy from AWS
+                url = AWS_TERRAIN_URL.format(z=z, x=x, y=y)
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        resp = await client.get(url)
+                        if resp.status_code == 200:
+                            cache_dir.mkdir(parents=True, exist_ok=True)
+                            tile_path.write_bytes(resp.content)
+                            proxied += 1
+                except Exception:
+                    pass
+
+    log.info("terrain_cache_warmed", cached=cached, rendered=rendered, proxied=proxied)
+    return {"cached": cached, "rendered": rendered, "proxied": proxied}
+
+
 _flat_terrain_cache: bytes | None = None
 
 

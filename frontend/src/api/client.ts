@@ -91,3 +91,10 @@ export async function startConsumerScan(lat: number, lon: number, radiusKm: numb
 export async function getJob(id: string) {
   return fetchJson<any>(`/jobs/${id}`);
 }
+
+export async function warmTerrainCache(west: number, south: number, east: number, north: number) {
+  return fetchJson<{ cached: number; rendered: number; proxied: number }>(
+    `/raster/terrain/warm?west=${west}&south=${south}&east=${east}&north=${north}`,
+    { method: 'POST' },
+  );
+}
