@@ -75,39 +75,39 @@ export default function LandingPage() {
       {/* Playground link */}
       <Link
         to="/playground"
-        className="absolute top-4 right-4 flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors"
+        className="absolute top-5 right-5 flex items-center gap-2 text-sm text-slate-500 hover:text-slate-300 transition-colors"
       >
-        <Settings2 size={13} />
+        <Settings2 size={16} />
         Advanced Playground
       </Link>
 
-      <div className="text-center px-6 max-w-md">
+      <div className="text-center px-8 max-w-xl">
         {/* Title */}
-        <h1 className="text-5xl font-black text-white mb-2 tracking-tight">Hole Finder</h1>
-        <p className="text-slate-400 text-base mb-8">
+        <h1 className="text-6xl md:text-7xl font-black text-white mb-3 tracking-tight">Hole Finder</h1>
+        <p className="text-slate-400 text-lg md:text-xl mb-10 leading-relaxed">
           Discover caves, mines, sinkholes & more hidden in LiDAR terrain data
         </p>
 
         {/* Buttons */}
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
           <button
             onClick={handleFindNearMe}
             disabled={geoLoading}
-            className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white font-medium py-3 px-6 rounded-xl text-sm transition-colors"
+            className="flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white font-semibold py-4 px-8 rounded-2xl text-lg transition-colors"
           >
-            {geoLoading ? <Loader2 size={16} className="animate-spin" /> : <Locate size={16} />}
-            {geoLoading ? 'Getting location...' : 'Find Near Me'}
+            {geoLoading ? <Loader2 size={22} className="animate-spin" /> : <Locate size={22} />}
+            {geoLoading ? 'Getting location...' : 'Find a Hole Near Me'}
           </button>
           <button
             onClick={() => setPhase('regionPicker')}
-            className="flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium py-3 px-6 rounded-xl text-sm transition-colors"
+            className="flex items-center justify-center gap-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-4 px-8 rounded-2xl text-lg transition-colors"
           >
-            <MapIcon size={16} />
+            <MapIcon size={22} />
             Pick a Region
           </button>
         </div>
 
-        <p className="text-xs text-slate-600 mt-8">
+        <p className="text-sm text-slate-600 mt-10">
           9 states &middot; 13 regions &middot; 36 validation sites
         </p>
       </div>
@@ -120,32 +120,32 @@ function RegionPicker({ onPick, onBack }: { onPick: (geometry: any) => void; onB
 
   return (
     <div className="h-full w-full bg-slate-950 overflow-y-auto">
-      <div className="max-w-3xl mx-auto px-6 py-8">
+      <div className="max-w-4xl mx-auto px-8 py-10">
         {/* Header */}
-        <div className="flex items-center gap-3 mb-6">
+        <div className="flex items-center gap-4 mb-8">
           <button onClick={onBack} className="text-slate-400 hover:text-white transition-colors">
-            <ArrowLeft size={20} />
+            <ArrowLeft size={24} />
           </button>
-          <h2 className="text-xl font-bold text-white">Pick a Region</h2>
+          <h2 className="text-2xl md:text-3xl font-bold text-white">Pick a Region</h2>
         </div>
 
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
-            <Loader2 size={24} className="animate-spin text-slate-500" />
+            <Loader2 size={28} className="animate-spin text-slate-500" />
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {regions.map((region) => (
               <button
                 key={region.name}
                 onClick={() => onPick(region.geometry)}
-                className="text-left bg-slate-800/80 hover:bg-slate-700 border border-slate-700/50 hover:border-slate-600 rounded-xl p-4 transition-all"
+                className="text-left bg-slate-800/80 hover:bg-slate-700 border border-slate-700/50 hover:border-slate-600 rounded-2xl p-5 transition-all"
               >
-                <h3 className="text-sm font-semibold text-white mb-1">
+                <h3 className="text-base font-semibold text-white mb-1.5">
                   {formatRegionName(region.name)}
                 </h3>
                 {region.description && (
-                  <p className="text-xs text-slate-400 leading-relaxed">{region.description}</p>
+                  <p className="text-sm text-slate-400 leading-relaxed">{region.description}</p>
                 )}
               </button>
             ))}

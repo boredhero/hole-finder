@@ -20,9 +20,9 @@ export default function TopBar() {
 
   return (
     <div className="fixed top-0 inset-x-0 z-30 bg-slate-900/80 backdrop-blur-lg border-b border-slate-700/50">
-      <div className="flex items-center gap-3 px-4 py-2.5">
+      <div className="flex items-center gap-4 px-5 py-3">
         {/* Title */}
-        <span className="text-sm font-bold text-white tracking-wide whitespace-nowrap">HOLE FINDER</span>
+        <span className="text-base font-bold text-white tracking-wide whitespace-nowrap">HOLE FINDER</span>
 
         {/* Basemap pills */}
         <div className="flex gap-0.5 bg-slate-800/80 rounded-lg p-0.5 ml-3">
@@ -30,7 +30,7 @@ export default function TopBar() {
             <button
               key={b.value}
               onClick={() => setBasemap(b.value)}
-              className={`px-2 py-1 text-xs rounded-md transition-colors ${
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
                 basemap === b.value ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -40,20 +40,20 @@ export default function TopBar() {
         </div>
 
         {/* Layer toggles */}
-        <div className="flex gap-1 ml-2">
+        <div className="flex gap-1.5 ml-2">
           <button
             onClick={toggleHeatmap}
-            className={`p-1.5 rounded-md transition-colors ${showHeatmap ? 'bg-orange-600/30 text-orange-400' : 'text-slate-500 hover:text-slate-300'}`}
+            className={`p-2 rounded-lg transition-colors ${showHeatmap ? 'bg-orange-600/30 text-orange-400' : 'text-slate-500 hover:text-slate-300'}`}
             title="Heatmap"
           >
-            <Flame size={14} />
+            <Flame size={18} />
           </button>
           <button
             onClick={toggleGroundTruth}
-            className={`p-1.5 rounded-md transition-colors ${showGroundTruth ? 'bg-yellow-600/30 text-yellow-400' : 'text-slate-500 hover:text-slate-300'}`}
+            className={`p-2 rounded-lg transition-colors ${showGroundTruth ? 'bg-yellow-600/30 text-yellow-400' : 'text-slate-500 hover:text-slate-300'}`}
             title="Ground truth sites"
           >
-            <MapPin size={14} />
+            <MapPin size={18} />
           </button>
         </div>
 
@@ -63,9 +63,9 @@ export default function TopBar() {
         {/* Playground link */}
         <Link
           to="/playground"
-          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
+          className="flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors"
         >
-          <Settings2 size={13} />
+          <Settings2 size={16} />
           Advanced
         </Link>
       </div>

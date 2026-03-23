@@ -23,19 +23,19 @@ export default function DetectionCard({ detection: d, compact, userLocation, sel
     return (
       <button
         onClick={onClick}
-        className={`flex-shrink-0 w-52 snap-start rounded-xl p-3 text-left transition-all ${
+        className={`flex-shrink-0 w-60 snap-start rounded-xl p-4 text-left transition-all ${
           selected ? 'bg-slate-700 ring-2 ring-blue-500' : 'bg-slate-800 hover:bg-slate-750'
         }`}
       >
-        <div className="flex items-center gap-2 mb-1.5">
-          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-          <span className="text-xs font-medium text-slate-200 truncate">{label}</span>
-          <span className="ml-auto text-xs font-mono text-slate-400">{pct}%</span>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+          <span className="text-sm font-medium text-slate-200 truncate">{label}</span>
+          <span className="ml-auto text-sm font-mono text-slate-400">{pct}%</span>
         </div>
-        <div className="h-1 bg-slate-700 rounded-full overflow-hidden mb-2">
+        <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden mb-2.5">
           <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
         </div>
-        <div className="flex items-center gap-2 text-xs text-slate-400">
+        <div className="flex items-center gap-2 text-sm text-slate-400">
           {d.depth_m != null && <span>{d.depth_m.toFixed(1)}m deep</span>}
           {distance != null && <span className="ml-auto">{distance.toFixed(1)} mi</span>}
         </div>
