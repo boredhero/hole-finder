@@ -1,8 +1,9 @@
 FROM python:3.12-slim
 
-# System deps for geospatial libraries
+# System deps for geospatial libraries + point cloud processing
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gdal-bin libgdal-dev libgeos-dev libproj-dev libspatialindex-dev \
+    pdal libpdal-dev \
     curl git \
     && rm -rf /var/lib/apt/lists/*
 

@@ -262,26 +262,38 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
 
         _update_job("RUNNING", 10, f"Downloading {len(tiles)} tiles")
 
-        # Download tiles (limit to first 10 for safety)
+        # Download tiles — parallel (4 concurrent), limit to first 10 for safety
         tile_limit = min(len(tiles), 10)
         downloaded = []
         with profiler.stage("tile_downloads", tile_limit=tile_limit) as ctx:
-            for i, tile in enumerate(tiles[:tile_limit]):
-                progress = 10 + (i / tile_limit) * 30
-                _update_job("RUNNING", progress, f"Downloading tile {i+1}/{tile_limit}")
+            source = get_source("usgs_3dep")
+            dest = settings.raw_dir / "usgs_3dep"
 
-                source_name = "usgs_3dep"
-                source = get_source(source_name)
-                dest = settings.raw_dir / source_name
-                t0 = time.perf_counter()
-                try:
-                    path = asyncio.run(source.download_tile(tile, dest))
-                    dl_elapsed = time.perf_counter() - t0
-                    downloaded.append(str(path))
-                    log.info("tile_downloaded", tile=tile.filename,
-                             elapsed_s=round(dl_elapsed, 2), index=i+1)
-                except Exception as e:
-                    log.warning("tile_download_failed", tile=tile.filename, error=str(e))
+            async def _download_all():
+                import asyncio as aio
+                sem = aio.Semaphore(4)  # 4 concurrent downloads
+                results = []
+
+                async def _dl(tile, idx):
+                    async with sem:
+                        t0 = time.perf_counter()
+                        try:
+                            path = await source.download_tile(tile, dest)
+                            elapsed = time.perf_counter() - t0
+                            log.info("tile_downloaded", tile=tile.filename,
+                                     elapsed_s=round(elapsed, 2), index=idx+1)
+                            return str(path)
+                        except Exception as e:
+                            log.warning("tile_download_failed",
+                                        tile=tile.filename, error=str(e))
+                            return None
+
+                tasks = [_dl(tile, i) for i, tile in enumerate(tiles[:tile_limit])]
+                results = await aio.gather(*tasks)
+                return [r for r in results if r is not None]
+
+            downloaded = asyncio.run(_download_all())
+            _update_job("RUNNING", 40, f"Downloaded {len(downloaded)}/{tile_limit} tiles")
             ctx["downloaded"] = len(downloaded)
             ctx["failed"] = tile_limit - len(downloaded)
 
