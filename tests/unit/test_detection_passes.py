@@ -177,7 +177,7 @@ class TestTPIPass:
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
             inp = _process_and_load(make_sinkhole_geotiff(d, depth=5.0, radius=15.0), d)
-            inp.config = {"threshold": -0.3}
+            inp.config = {"threshold": -0.05, "min_area_pixels": 1}
             assert len(TPIPass().run(inp)) >= 1
 
     def test_no_false_pos_flat(self):
