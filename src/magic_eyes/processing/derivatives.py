@@ -94,14 +94,16 @@ def compute_plan_curvature(dem: str, out: str) -> str:
 
 
 def compute_fill_difference(dem: str, filled: str, out: str) -> str:
-    import shutil
-    # gdal_calc binary name varies: gdal_calc.py (Debian) vs gdal_calc (Arch)
-    calc_bin = shutil.which("gdal_calc.py") or shutil.which("gdal_calc")
-    if not calc_bin:
-        raise RuntimeError("gdal_calc not found")
-    _run([calc_bin, "-A", filled, "-B", dem,
-          "--outfile=" + out, "--calc=A-B", "--type=Float32",
-          "--co=COMPRESS=DEFLATE", "--co=TILED=YES", "--quiet"])
+    """Subtract original DEM from filled DEM using rasterio (trivial operation)."""
+    import rasterio
+    with rasterio.open(dem) as src_dem, rasterio.open(filled) as src_filled:
+        dem_arr = src_dem.read(1)
+        filled_arr = src_filled.read(1)
+        diff = (filled_arr - dem_arr).astype("float32")
+        profile = src_dem.profile.copy()
+        profile.update(dtype="float32", compress="deflate")
+        with rasterio.open(out, "w", **profile) as dst:
+            dst.write(diff, 1)
     return out
 
 

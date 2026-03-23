@@ -119,7 +119,9 @@ class TestTPI:
             d = Path(d)
             derivs = _run_pipeline(make_flat_geotiff(d), d)
             tpi = _read(derivs["tpi"])
-            assert np.mean(np.abs(tpi)) < 0.1
+            # GDAL TPI outputs nodata (-9999) on edges, mask those
+            valid = tpi[(tpi > -9000) & (tpi < 9000)]
+            assert np.mean(np.abs(valid)) < 0.1
 
     def test_pit_negative_tpi(self):
         with tempfile.TemporaryDirectory() as d:
