@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useStore } from '../../store';
 import { validateDetection } from '../../api/client';
 import { FEATURE_COLORS, FEATURE_LABELS } from '../../types';
-import { ArrowLeft, CheckCircle, XCircle, HelpCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle, XCircle, HelpCircle, MessageSquare, Bookmark, Send } from 'lucide-react';
 
 export default function DetailPanel() {
   const detection = useStore((s) => s.selectedDetection);
@@ -99,7 +99,80 @@ export default function DetailPanel() {
           </button>
         </div>
       </section>
+
+      {/* Save / Highlight */}
+      <section className="border-t border-slate-700 pt-3 mt-1">
+        <button
+          onClick={() => {
+            fetch(`/api/detections/${detection.id}/save`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ label: 'Interesting', color: '#f59e0b' }),
+            }).then(() => qc.invalidateQueries({ queryKey: ['saved'] }));
+          }}
+          className="w-full flex items-center justify-center gap-1 bg-amber-700 hover:bg-amber-600 text-white text-xs py-1.5 rounded transition-colors">
+          <Bookmark size={14} /> Save Detection
+        </button>
+      </section>
+
+      {/* Comments */}
+      <CommentsSection detectionId={detection.id} />
     </div>
+  );
+}
+
+function CommentsSection({ detectionId }: { detectionId: string }) {
+  const [text, setText] = useState('');
+  const [author, setAuthor] = useState('');
+  const qc = useQueryClient();
+
+  const { data: comments = [] } = useQuery({
+    queryKey: ['comments', detectionId],
+    queryFn: async () => {
+      const res = await fetch(`/api/detections/${detectionId}/comments`);
+      return res.json();
+    },
+  });
+
+  const addComment = useMutation({
+    mutationFn: async () => {
+      await fetch(`/api/detections/${detectionId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, author: author || 'Anonymous' }),
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['comments', detectionId] });
+      setText('');
+    },
+  });
+
+  return (
+    <section className="border-t border-slate-700 pt-3 mt-1">
+      <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1">
+        <MessageSquare size={12} /> Comments ({comments.length})
+      </h4>
+
+      {comments.map((c: any) => (
+        <div key={c.id} className="bg-slate-800 rounded p-2 mb-1 text-xs">
+          <div className="text-slate-200">{c.text}</div>
+          <div className="text-slate-500 text-[10px] mt-0.5">{c.author} &middot; {new Date(c.created_at).toLocaleDateString()}</div>
+        </div>
+      ))}
+
+      <div className="flex gap-1 mt-2">
+        <input value={author} onChange={(e) => setAuthor(e.target.value)}
+          placeholder="Name" className="w-16 bg-slate-800 border border-slate-600 rounded text-xs p-1 text-slate-200" />
+        <input value={text} onChange={(e) => setText(e.target.value)}
+          placeholder="Add comment..." className="flex-1 bg-slate-800 border border-slate-600 rounded text-xs p-1 text-slate-200"
+          onKeyDown={(e) => e.key === 'Enter' && text && addComment.mutate()} />
+        <button onClick={() => text && addComment.mutate()} disabled={!text}
+          className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-2 rounded">
+          <Send size={12} />
+        </button>
+      </div>
+    </section>
   );
 }
 

@@ -267,3 +267,44 @@ class ValidationEvent(Base):
     )
 
     detection: Mapped["Detection"] = relationship(back_populates="validation_events")
+
+
+class Comment(Base):
+    """User comments on detections — visible to everyone on the map."""
+
+    __tablename__ = "comments"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    detection_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("detections.id")
+    )
+    text: Mapped[str] = mapped_column(Text)
+    author: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    detection: Mapped["Detection"] = relationship()
+
+
+class SavedDetection(Base):
+    """User-saved/highlighted detections."""
+
+    __tablename__ = "saved_detections"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    detection_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("detections.id")
+    )
+    label: Mapped[str | None] = mapped_column(String(255))
+    color: Mapped[str | None] = mapped_column(String(7))  # hex color
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    detection: Mapped["Detection"] = relationship()

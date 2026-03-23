@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { useStore } from '../../store';
 import { useDetections as useDetectionsHook } from '../../hooks/useDetections';
 import FilterPanel from './FilterPanel';
@@ -42,7 +43,10 @@ export default function Sidebar() {
       `}>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700 flex-shrink-0">
-          <h2 className="text-sm font-bold text-white tracking-wide">MAGIC EYES</h2>
+          <div>
+            <h2 className="text-sm font-bold text-white tracking-wide">HOLE FINDER</h2>
+            <VersionTag />
+          </div>
           <button onClick={() => setSidebarOpen(false)} className="text-slate-400 hover:text-white md:hidden">
             <X size={18} />
           </button>
@@ -107,4 +111,17 @@ function DetectionList() {
       </div>
     </div>
   );
+}
+
+function VersionTag() {
+  const { data } = useQuery({
+    queryKey: ['info'],
+    queryFn: async () => {
+      const res = await fetch('/api/info');
+      return res.json();
+    },
+    staleTime: 300_000,
+  });
+  if (!data) return null;
+  return <span className="text-[10px] text-slate-500">v{data.version}</span>;
 }

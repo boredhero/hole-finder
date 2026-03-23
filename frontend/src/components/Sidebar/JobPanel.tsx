@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useJobs, useCreateJob, useCancelJob } from '../../hooks/useJobs';
-import { Loader2, Play, X } from 'lucide-react';
+import { useStore } from '../../store';
+import { Loader2, Play, X, PenTool } from 'lucide-react';
 
 const CONFIGS = ['sinkhole_survey', 'cave_hunting', 'mine_detection'];
 const REGIONS = ['western_pa', 'eastern_pa', 'west_virginia', 'eastern_ohio', 'upstate_ny'];
@@ -9,25 +10,57 @@ export default function JobPanel() {
   const { data: jobs = [], isLoading } = useJobs();
   const createJob = useCreateJob();
   const cancelJob = useCancelJob();
+  const setDrawingAOI = useStore((s) => s.setDrawingAOI);
+  const drawnAOI = useStore((s) => s.drawnAOI);
   const [region, setRegion] = useState(REGIONS[0]);
   const [config, setConfig] = useState(CONFIGS[0]);
+  const [useDrawn, setUseDrawn] = useState(false);
 
   return (
     <div className="flex flex-col gap-4 p-4">
       {/* Submit new job */}
       <section>
         <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">New Job</h3>
-        <select value={region} onChange={(e) => setRegion(e.target.value)}
-          className="w-full bg-slate-800 border border-slate-600 rounded text-sm p-2 text-slate-200 mb-2">
-          {REGIONS.map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
-        </select>
+
+        {/* Area selection: region dropdown OR draw on map */}
+        <div className="flex gap-1 mb-2">
+          <button onClick={() => { setUseDrawn(false); setDrawingAOI(false); }}
+            className={`flex-1 text-xs py-1.5 rounded ${!useDrawn ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+            Region
+          </button>
+          <button onClick={() => { setUseDrawn(true); setDrawingAOI(true); }}
+            className={`flex-1 text-xs py-1.5 rounded flex items-center justify-center gap-1 ${useDrawn ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+            <PenTool size={12} /> Draw AOI
+          </button>
+        </div>
+
+        {!useDrawn ? (
+          <select value={region} onChange={(e) => setRegion(e.target.value)}
+            className="w-full bg-slate-800 border border-slate-600 rounded text-sm p-2 text-slate-200 mb-2">
+            {REGIONS.map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
+          </select>
+        ) : (
+          <div className="text-xs text-slate-400 mb-2 p-2 bg-slate-800 rounded">
+            {drawnAOI ? 'AOI drawn on map' : 'Click map to draw polygon...'}
+          </div>
+        )}
+
         <select value={config} onChange={(e) => setConfig(e.target.value)}
           className="w-full bg-slate-800 border border-slate-600 rounded text-sm p-2 text-slate-200 mb-2">
           {CONFIGS.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}
         </select>
         <button
-          onClick={() => createJob.mutate({ job_type: 'full_pipeline', region_name: region, pass_config: config })}
-          disabled={createJob.isPending}
+          onClick={() => {
+            const body: any = { job_type: 'full_pipeline', pass_config: config };
+            if (useDrawn && drawnAOI) {
+              body.bbox = drawnAOI;
+            } else {
+              body.region_name = region;
+            }
+            createJob.mutate(body);
+            setDrawingAOI(false);
+          }}
+          disabled={createJob.isPending || (useDrawn && !drawnAOI)}
           className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm py-2 rounded transition-colors">
           {createJob.isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
           Submit Job
