@@ -33,6 +33,13 @@ const SATELLITE_STYLE = {
 const LIDAR_STYLE = {
   version: 8 as const,
   sources: {
+    'topo-contours': {
+      type: 'raster' as const,
+      tiles: ['https://tile.opentopomap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      maxzoom: 17,
+      attribution: 'OpenTopoMap',
+    },
     'lidar-hillshade': {
       type: 'raster' as const,
       tiles: ['/api/raster/hillshade/{z}/{x}/{y}.png'],
@@ -41,11 +48,19 @@ const LIDAR_STYLE = {
       maxzoom: 16,
     },
   },
-  layers: [{
-    id: 'lidar-hillshade',
-    type: 'raster' as const,
-    source: 'lidar-hillshade',
-  }],
+  layers: [
+    {
+      id: 'topo-base',
+      type: 'raster' as const,
+      source: 'topo-contours',
+    },
+    {
+      id: 'lidar-hillshade',
+      type: 'raster' as const,
+      source: 'lidar-hillshade',
+      paint: { 'raster-opacity': 0.7 },
+    },
+  ],
 };
 
 const BASEMAP_STYLES: Record<Basemap, string | object> = {
@@ -113,16 +128,20 @@ export default function MapView() {
         id: 'detections',
         data: detections,
         getPosition: (d: Detection) => [d.lon, d.lat],
-        getRadius: (d: Detection) => 4 + d.confidence * 12,
+        getRadius: (d: Detection) => 15 + d.confidence * 25,
         getFillColor: (d: Detection) => {
           const color = hexToRgb(FEATURE_COLORS[d.feature_type] || '#6b7280');
-          const alpha = d.id === hoveredId ? 255 : 180;
+          const alpha = d.id === hoveredId ? 255 : 160;
           return [...color, alpha];
         },
-        getLineColor: [255, 255, 255, 120],
-        lineWidthMinPixels: 1,
-        radiusMinPixels: 4,
-        radiusMaxPixels: 20,
+        getLineColor: (d: Detection) => {
+          return d.id === hoveredId ? [255, 255, 255, 255] : [255, 255, 255, 180];
+        },
+        getLineWidth: (d: Detection) => d.id === hoveredId ? 3 : 2,
+        lineWidthMinPixels: 2,
+        stroked: true,
+        radiusMinPixels: 8,
+        radiusMaxPixels: 40,
         pickable: true,
         onClick: ({ object }: { object?: Detection }) => {
           if (object) {
@@ -135,6 +154,8 @@ export default function MapView() {
         },
         updateTriggers: {
           getFillColor: [hoveredId],
+          getLineColor: [hoveredId],
+          getLineWidth: [hoveredId],
         },
       }));
     }
@@ -145,12 +166,13 @@ export default function MapView() {
         id: 'ground-truth',
         data: groundTruth,
         getPosition: (d: GroundTruthSite) => [d.lon, d.lat],
-        getRadius: 8,
+        getRadius: 15,
         getFillColor: [255, 215, 0, 200],
         getLineColor: [255, 255, 255, 255],
+        stroked: true,
         lineWidthMinPixels: 2,
-        radiusMinPixels: 6,
-        radiusMaxPixels: 12,
+        radiusMinPixels: 10,
+        radiusMaxPixels: 20,
         pickable: true,
         onClick: ({ object }: { object?: GroundTruthSite }) => {
           if (object) {
@@ -191,7 +213,7 @@ export default function MapView() {
           });
         }
       }}
-      terrain={show3DTerrain ? { source: 'terrain-source', exaggeration: terrainExaggeration } : undefined}
+      terrain={show3DTerrain && basemap !== 'lidar' ? { source: 'terrain-source', exaggeration: terrainExaggeration } : undefined}
       cursor={hoveredId ? 'pointer' : 'grab'}
     >
       <DeckGLOverlay layers={layers} />
