@@ -62,7 +62,7 @@ async def get_vector_tile(
         ),
         outline_data AS (
             SELECT
-                ST_AsMVTGeom(d.outline, tb.geom, 4096, 256, true) AS geom,
+                ST_AsMVTGeom(ST_ForcePolygonCW(d.outline), tb.geom, 4096, 256, true) AS geom,
                 d.id::text AS id,
                 d.feature_type::text AS feature_type,
                 d.confidence
@@ -90,7 +90,7 @@ async def get_vector_tile(
 
     return Response(
         content=bytes(mvt_data),
-        media_type="application/vnd.mapbox-vector-tile",
+        media_type="application/x-protobuf",
         headers={
             "Cache-Control": "public, max-age=3600",
             "Access-Control-Allow-Origin": "*",
@@ -135,6 +135,6 @@ async def get_ground_truth_tile(
 
     return Response(
         content=bytes(mvt_data),
-        media_type="application/vnd.mapbox-vector-tile",
+        media_type="application/x-protobuf",
         headers={"Cache-Control": "public, max-age=3600"},
     )
