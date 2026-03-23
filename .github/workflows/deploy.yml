@@ -58,7 +58,7 @@ jobs:
           target: /tmp/anomalies-deploy/
 
       - name: Deploy to compute node via jumpbox
-        uses: appleboy/ssh-action@v2
+        uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
