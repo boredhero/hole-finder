@@ -13,7 +13,7 @@ class DetectionProperties(BaseModel):
     area_m2: float | None = None
     circularity: float | None = None
     wall_slope_deg: float | None = None
-    source_passes: dict | None = None
+    source_passes: dict | list | None = None
     morphometrics: dict | None = None
     validated: bool | None = None
     validation_notes: str | None = None
@@ -40,7 +40,7 @@ class DetectionDetail(BaseModel):
     area_m2: float | None
     circularity: float | None
     morphometrics: dict | None
-    source_passes: dict | None
+    source_passes: dict | list | None
     validated: bool | None
     validation_notes: str | None
     pass_results: list[dict] = []
