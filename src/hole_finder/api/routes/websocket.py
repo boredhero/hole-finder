@@ -67,6 +67,7 @@ async def job_progress_ws(websocket: WebSocket):
                         "progress": j.progress or 0.0,
                         "job_type": j.job_type.value if j.job_type else "unknown",
                         "stage": summary.get("stage"),
+                        "source": summary.get("source"),
                         "total_detections": summary.get("total_detections"),
                     })
 

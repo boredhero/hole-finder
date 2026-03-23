@@ -276,6 +276,7 @@ export default function LandingPage() {
         <ProcessingScreen
           progress={jobProgress.progress}
           stage={jobProgress.stage}
+          source={jobProgress.source}
           error={jobProgress.status === 'FAILED' ? (jobProgress.error || 'Processing failed') : null}
           onRetry={() => {
             setActiveJobId(null);

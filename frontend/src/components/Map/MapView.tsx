@@ -103,6 +103,7 @@ function FlyToHandler() {
 
   useEffect(() => {
     if (targetViewState && mapRef) {
+      console.log('[HoleFinder] FlyTo:', targetViewState.latitude.toFixed(4), targetViewState.longitude.toFixed(4));
       mapRef.flyTo({
         center: [targetViewState.longitude, targetViewState.latitude],
         zoom: targetViewState.zoom,

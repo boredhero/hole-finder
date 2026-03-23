@@ -154,11 +154,12 @@ function getStageIndex(stage: string | null, progress: number): number {
 interface ProcessingScreenProps {
   progress: number;
   stage: string | null;
+  source: string | null;
   error: string | null;
   onRetry: () => void;
 }
 
-export default function ProcessingScreen({ progress, stage, error, onRetry }: ProcessingScreenProps) {
+export default function ProcessingScreen({ progress, stage, source, error, onRetry }: ProcessingScreenProps) {
   const [factIndex, setFactIndex] = useState(() => Math.floor(Math.random() * FUN_FACTS.length));
   const [, setSeenIndices] = useState<Set<number>>(() => new Set());
   const [factVisible, setFactVisible] = useState(true);
@@ -214,7 +215,11 @@ export default function ProcessingScreen({ progress, stage, error, onRetry }: Pr
         <Loader2 size={40} className="animate-spin text-hotpink-400 mx-auto mb-6" />
 
         {/* Stage label */}
-        <h2 className="text-xl font-bold text-white mb-6">{currentLabel}</h2>
+        <h2 className="text-xl font-bold text-white mb-2">{currentLabel}</h2>
+        {source && (
+          <p className="text-sm text-slate-400 mb-6">Source: {source}</p>
+        )}
+        {!source && <div className="mb-6" />}
 
         {/* Stage indicators */}
         <div className="flex items-center justify-center gap-3 mb-8">

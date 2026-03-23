@@ -5,6 +5,7 @@ import { getJob } from '../api/client';
 interface JobProgress {
   progress: number;
   stage: string | null;
+  source: string | null;
   status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | null;
   totalDetections: number | null;
   error: string | null;
@@ -24,6 +25,7 @@ export function useJobProgress(jobId: string | null): JobProgress {
   const [state, setState] = useState<JobProgress>({
     progress: 0,
     stage: null,
+    source: null,
     status: null,
     totalDetections: null,
     error: null,
@@ -33,6 +35,7 @@ export function useJobProgress(jobId: string | null): JobProgress {
     const newState: JobProgress = {
       progress: job.progress || 0,
       stage: job.stage || null,
+      source: job.source || null,
       status: job.status?.toUpperCase() || null,
       totalDetections: job.total_detections ?? null,
       error: job.error_message || null,
@@ -61,7 +64,7 @@ export function useJobProgress(jobId: string | null): JobProgress {
 
   useEffect(() => {
     if (!jobId) {
-      setState({ progress: 0, stage: null, status: null, totalDetections: null, error: null });
+      setState({ progress: 0, stage: null, source: null, status: null, totalDetections: null, error: null });
       return;
     }
 

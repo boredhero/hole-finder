@@ -280,7 +280,9 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
             _update_job("COMPLETED", 100, summary={"tiles": 0, "detections": 0})
             return
 
-        _update_job("RUNNING", 10, f"Downloading {len(tiles)} tiles", stage="downloading")
+        source_name = "USGS 3DEP" if bbox_geojson else region_name or "unknown"
+        _update_job("RUNNING", 10, f"Downloading {len(tiles)} tiles", stage="downloading",
+                     summary={"stage": "downloading", "source": source_name})
 
         # Download tiles — parallel, respect config tile_limit (consumer jobs: 4)
         async def _get_tile_limit():
