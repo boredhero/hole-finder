@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --sidebar-width: 380px;
+  --sidebar-width: 420px;
   --color-primary: #3b82f6;
   --color-cave: #ef4444;
   --color-mine: #f97316;
@@ -21,8 +21,11 @@ html, body, #root {
   width: 100%;
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
   background: #0f172a;
   color: #e2e8f0;
+  -webkit-font-smoothing: antialiased;
 }
 
 .maplibregl-ctrl-attrib {

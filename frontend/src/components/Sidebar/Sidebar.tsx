@@ -59,7 +59,7 @@ export default function Sidebar() {
             const hasNotification = tab.id === 'detail' && selectedDetection;
             return (
               <button key={tab.id} onClick={() => setActivePanel(tab.id)}
-                className={`flex-1 flex flex-col items-center gap-0.5 py-2 text-[10px] transition-colors relative
+                className={`flex-1 flex flex-col items-center gap-0.5 py-2 text-xs transition-colors relative
                   ${isActive ? 'text-blue-400 border-b-2 border-blue-400' : 'text-slate-500 hover:text-slate-300'}`}>
                 <tab.icon size={16} />
                 <span>{tab.label}</span>
@@ -88,7 +88,7 @@ function DetectionList() {
 
   return (
     <div className="p-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+      <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-2">
         {detections.length} detections in view
       </h3>
       <div className="flex flex-col gap-1 max-h-[50vh] overflow-y-auto">
@@ -100,7 +100,7 @@ function DetectionList() {
             <span className="text-xs text-slate-200 truncate flex-1">
               {d.feature_type?.replace(/_/g, ' ') || 'unknown'}
             </span>
-            <span className="text-[10px] text-slate-400 font-mono">
+            <span className="text-xs text-slate-400 font-mono">
               {(d.confidence * 100).toFixed(0)}%
             </span>
           </button>
@@ -123,5 +123,5 @@ function VersionTag() {
     staleTime: 300_000,
   });
   if (!data) return null;
-  return <span className="text-[10px] text-slate-500">v{data.version}</span>;
+  return <span className="text-xs text-slate-500">v{data.version}</span>;
 }

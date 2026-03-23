@@ -73,7 +73,7 @@ export default function DetailPanel() {
 
       {/* Validation */}
       <section className="border-t border-slate-700 pt-3 mt-1">
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Validate</h4>
+        <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-2">Validate</h4>
         {detection.validated != null && (
           <div className={`text-xs mb-2 ${detection.validated ? 'text-green-400' : 'text-red-400'}`}>
             Currently: {detection.validated ? 'Confirmed' : 'Rejected'}
@@ -150,14 +150,14 @@ function CommentsSection({ detectionId }: { detectionId: string }) {
 
   return (
     <section className="border-t border-slate-700 pt-3 mt-1">
-      <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1">
+      <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1">
         <MessageSquare size={12} /> Comments ({comments.length})
       </h4>
 
       {comments.map((c: any) => (
         <div key={c.id} className="bg-slate-800 rounded p-2 mb-1 text-xs">
           <div className="text-slate-200">{c.text}</div>
-          <div className="text-slate-500 text-[10px] mt-0.5">{c.author} &middot; {new Date(c.created_at).toLocaleDateString()}</div>
+          <div className="text-slate-500 text-xs mt-0.5">{c.author} &middot; {new Date(c.created_at).toLocaleDateString()}</div>
         </div>
       ))}
 
@@ -179,7 +179,7 @@ function CommentsSection({ detectionId }: { detectionId: string }) {
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="bg-slate-800 rounded p-2">
-      <div className="text-slate-400 text-[10px] uppercase">{label}</div>
+      <div className="text-slate-400 text-xs uppercase">{label}</div>
       <div className="text-slate-100 font-mono text-sm">{value}</div>
     </div>
   );

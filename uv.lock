@@ -609,6 +609,101 @@ wheels = [
 ]
 
 [[package]]
+name = "hole-finder"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "alembic" },
+    { name = "asyncpg" },
+    { name = "boto3" },
+    { name = "celery", extra = ["redis"] },
+    { name = "click" },
+    { name = "fastapi" },
+    { name = "fiona" },
+    { name = "geoalchemy2" },
+    { name = "geopandas" },
+    { name = "httpx" },
+    { name = "joblib" },
+    { name = "numpy" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "pyproj" },
+    { name = "pystac-client" },
+    { name = "rasterio" },
+    { name = "redis" },
+    { name = "rtree" },
+    { name = "scikit-image" },
+    { name = "scikit-learn" },
+    { name = "scipy" },
+    { name = "shapely" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "structlog" },
+    { name = "uvicorn", extra = ["standard"] },
+    { name = "whitebox" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+    { name = "testcontainers" },
+]
+gpu = [
+    { name = "segmentation-models-pytorch" },
+    { name = "torch" },
+    { name = "torchvision" },
+    { name = "ultralytics" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "alembic", specifier = ">=1.13" },
+    { name = "asyncpg", specifier = ">=0.29" },
+    { name = "boto3", specifier = ">=1.34" },
+    { name = "celery", extras = ["redis"], specifier = ">=5.4" },
+    { name = "click", specifier = ">=8.1" },
+    { name = "fastapi", specifier = ">=0.111" },
+    { name = "fiona", specifier = ">=1.9" },
+    { name = "geoalchemy2", specifier = ">=0.15" },
+    { name = "geopandas", specifier = ">=0.14" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "joblib", specifier = ">=1.3" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "pydantic-settings", specifier = ">=2.2" },
+    { name = "pyproj", specifier = ">=3.6" },
+    { name = "pystac-client", specifier = ">=0.8" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.1" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
+    { name = "rasterio", specifier = ">=1.3" },
+    { name = "redis", specifier = ">=5.0" },
+    { name = "rtree", specifier = ">=1.2" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
+    { name = "scikit-image", specifier = ">=0.22" },
+    { name = "scikit-learn", specifier = ">=1.4" },
+    { name = "scipy", specifier = ">=1.12" },
+    { name = "segmentation-models-pytorch", marker = "extra == 'gpu'", specifier = ">=0.3.4" },
+    { name = "shapely", specifier = ">=2.0" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
+    { name = "structlog", specifier = ">=24.1" },
+    { name = "testcontainers", extras = ["postgres"], marker = "extra == 'dev'", specifier = ">=4.4" },
+    { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0" },
+    { name = "torch", marker = "extra == 'gpu'", specifier = ">=2.3.0" },
+    { name = "torchvision", marker = "extra == 'gpu'", specifier = ">=0.18.0" },
+    { name = "ultralytics", marker = "extra == 'gpu'", specifier = ">=8.2.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.29" },
+    { name = "whitebox", specifier = ">=2.3" },
+]
+provides-extras = ["gpu", "dev"]
+
+[[package]]
 name = "httpcore"
 version = "1.0.9"
 source = { registry = "https://pypi.org/simple" }
@@ -887,101 +982,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/de/d1/fa5d5331b862b9775aaf2a100f5ef86854e5d4407f71bddf102f4421e034/librt-0.8.1-cp312-cp312-win_amd64.whl", hash = "sha256:ff8baf1f8d3f4b6b7257fcb75a501f2a5499d0dda57645baa09d4d0d34b19444", size = 62017, upload-time = "2026-02-17T16:11:55.748Z" },
     { url = "https://files.pythonhosted.org/packages/c7/7c/c614252f9acda59b01a66e2ddfd243ed1c7e1deab0293332dfbccf862808/librt-0.8.1-cp312-cp312-win_arm64.whl", hash = "sha256:0f2ae3725904f7377e11cc37722d5d401e8b3d5851fb9273d7f4fe04f6b3d37d", size = 52441, upload-time = "2026-02-17T16:11:56.801Z" },
 ]
-
-[[package]]
-name = "magic-eyes"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "alembic" },
-    { name = "asyncpg" },
-    { name = "boto3" },
-    { name = "celery", extra = ["redis"] },
-    { name = "click" },
-    { name = "fastapi" },
-    { name = "fiona" },
-    { name = "geoalchemy2" },
-    { name = "geopandas" },
-    { name = "httpx" },
-    { name = "joblib" },
-    { name = "numpy" },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "pyproj" },
-    { name = "pystac-client" },
-    { name = "rasterio" },
-    { name = "redis" },
-    { name = "rtree" },
-    { name = "scikit-image" },
-    { name = "scikit-learn" },
-    { name = "scipy" },
-    { name = "shapely" },
-    { name = "sqlalchemy", extra = ["asyncio"] },
-    { name = "structlog" },
-    { name = "uvicorn", extra = ["standard"] },
-    { name = "whitebox" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "mypy" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-    { name = "testcontainers" },
-]
-gpu = [
-    { name = "segmentation-models-pytorch" },
-    { name = "torch" },
-    { name = "torchvision" },
-    { name = "ultralytics" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "alembic", specifier = ">=1.13" },
-    { name = "asyncpg", specifier = ">=0.29" },
-    { name = "boto3", specifier = ">=1.34" },
-    { name = "celery", extras = ["redis"], specifier = ">=5.4" },
-    { name = "click", specifier = ">=8.1" },
-    { name = "fastapi", specifier = ">=0.111" },
-    { name = "fiona", specifier = ">=1.9" },
-    { name = "geoalchemy2", specifier = ">=0.15" },
-    { name = "geopandas", specifier = ">=0.14" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "joblib", specifier = ">=1.3" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7" },
-    { name = "pydantic", specifier = ">=2.7" },
-    { name = "pydantic-settings", specifier = ">=2.2" },
-    { name = "pyproj", specifier = ">=3.6" },
-    { name = "pystac-client", specifier = ">=0.8" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.1" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
-    { name = "rasterio", specifier = ">=1.3" },
-    { name = "redis", specifier = ">=5.0" },
-    { name = "rtree", specifier = ">=1.2" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
-    { name = "scikit-image", specifier = ">=0.22" },
-    { name = "scikit-learn", specifier = ">=1.4" },
-    { name = "scipy", specifier = ">=1.12" },
-    { name = "segmentation-models-pytorch", marker = "extra == 'gpu'", specifier = ">=0.3.4" },
-    { name = "shapely", specifier = ">=2.0" },
-    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
-    { name = "structlog", specifier = ">=24.1" },
-    { name = "testcontainers", extras = ["postgres"], marker = "extra == 'dev'", specifier = ">=4.4" },
-    { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0" },
-    { name = "torch", marker = "extra == 'gpu'", specifier = ">=2.3.0" },
-    { name = "torchvision", marker = "extra == 'gpu'", specifier = ">=0.18.0" },
-    { name = "ultralytics", marker = "extra == 'gpu'", specifier = ">=8.2.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.29" },
-    { name = "whitebox", specifier = ">=2.3" },
-]
-provides-extras = ["gpu", "dev"]
 
 [[package]]
 name = "mako"

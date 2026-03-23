@@ -34,7 +34,7 @@ export default function FilterPanel() {
     <div className="flex flex-col gap-4 p-4">
       {/* Basemap */}
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Basemap</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-2">Basemap</h3>
         <div className="flex gap-1">
           {BASEMAPS.map(b => (
             <button key={b.value} onClick={() => setBasemap(b.value)}
@@ -47,7 +47,7 @@ export default function FilterPanel() {
 
       {/* Feature Types */}
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Feature Types</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-2">Feature Types</h3>
         <div className="flex flex-col gap-1">
           {ALL_TYPES.map(ft => (
             <label key={ft} className="flex items-center gap-2 cursor-pointer text-sm py-0.5">
@@ -63,7 +63,7 @@ export default function FilterPanel() {
 
       {/* Confidence Range */}
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-2">
           Confidence: {filters.confidenceRange[0].toFixed(1)} - {filters.confidenceRange[1].toFixed(1)}
         </h3>
         <input type="range" min={0} max={1} step={0.05}
@@ -74,7 +74,7 @@ export default function FilterPanel() {
 
       {/* Layer Toggles */}
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Layers</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-2">Layers</h3>
         <label className="flex items-center gap-2 cursor-pointer text-sm py-0.5">
           <input type="checkbox" checked={showHeatmap} onChange={toggleHeatmap} className="rounded" />
           <span className="text-slate-200">Heatmap</span>
