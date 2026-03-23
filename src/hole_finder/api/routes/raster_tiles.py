@@ -202,12 +202,11 @@ async def get_composited_terrain_tile(z: int, x: int, y: int):
 
     # 3b. Proxy from AWS Terrarium tiles
     url = AWS_TERRAIN_URL.format(z=z, x=x, y=y)
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(url)
             if resp.status_code == 200:
                 png_bytes = resp.content
-                # Cache the AWS tile too
                 cache_dir.mkdir(parents=True, exist_ok=True)
                 tile_path.write_bytes(png_bytes)
                 return Response(
@@ -215,26 +214,38 @@ async def get_composited_terrain_tile(z: int, x: int, y: int):
                     media_type="image/png",
                     headers={"Cache-Control": "public, max-age=3600"},
                 )
-        except Exception:
-            pass
+    except Exception as e:
+        log.warning("aws_terrain_proxy_failed", z=z, x=x, y=y, error=str(e))
 
-    # 4. Fallback: flat sea-level tile
-    FLAT_TERRAIN = _make_flat_terrarium_png()
+    # 4. Fallback: 256x256 flat sea-level terrain tile
+    # MapLibre raster-dem requires 256x256 — a 1x1 PNG breaks the decoder
+    flat_png = _make_flat_terrarium_png_256()
     return Response(
-        content=FLAT_TERRAIN,
+        content=flat_png,
         media_type="image/png",
         headers={"Cache-Control": "public, max-age=60"},
     )
 
 
-def _make_flat_terrarium_png() -> bytes:
-    """Create a 1x1 Terrarium PNG encoding elevation = 0m."""
-    # Terrarium: 0m = (128 * 256 + 0 + 0/256) - 32768 = 0. So R=128, G=0, B=0
+_flat_terrain_cache: bytes | None = None
+
+
+def _make_flat_terrarium_png_256() -> bytes:
+    """Create a 256x256 Terrarium PNG encoding elevation = 0m.
+
+    MapLibre's raster-dem decoder requires 256x256 tiles.
+    Terrarium: 0m = (128 * 256 + 0 + 0/256) - 32768 = 0. So R=128, G=0, B=0.
+    """
+    global _flat_terrain_cache
+    if _flat_terrain_cache is not None:
+        return _flat_terrain_cache
+
     from PIL import Image
-    img = Image.new("RGB", (1, 1), (128, 0, 0))
+    img = Image.new("RGB", (256, 256), (128, 0, 0))
     buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+    img.save(buf, format="PNG", optimize=True)
+    _flat_terrain_cache = buf.getvalue()
+    return _flat_terrain_cache
 
 
 @router.get("/raster/terrain-rgb/{z}/{x}/{y}.png")
