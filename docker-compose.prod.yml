@@ -52,7 +52,7 @@ services:
     volumes:
       - ./configs:/app/configs:ro
       - magic_eyes_logs:/app/logs
-      - magic_eyes_data:/data/magic-eyes
+      - /data/magic-eyes:/data/magic-eyes
     depends_on:
       db:
         condition: service_healthy
@@ -81,7 +81,7 @@ services:
     volumes:
       - ./configs:/app/configs:ro
       - magic_eyes_logs:/app/logs
-      - magic_eyes_data:/data/magic-eyes
+      - /data/magic-eyes:/data/magic-eyes
     depends_on:
       db:
         condition: service_healthy
@@ -102,7 +102,7 @@ services:
     volumes:
       - ./configs:/app/configs:ro
       - magic_eyes_logs:/app/logs
-      - magic_eyes_data:/data/magic-eyes
+      - /data/magic-eyes:/data/magic-eyes
     devices:
       - /dev/kfd:/dev/kfd
       - /dev/dri:/dev/dri
@@ -126,4 +126,3 @@ volumes:
   magic_eyes_pgdata:
   magic_eyes_redis:
   magic_eyes_logs:
-  magic_eyes_data:
