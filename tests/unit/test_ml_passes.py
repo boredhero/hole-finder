@@ -75,30 +75,40 @@ class TestMLPassesRegistered:
 @pytest.mark.skipif(not NATIVE_AVAILABLE, reason="Requires GDAL + WhiteboxTools")
 class TestFeatureExtraction:
     def test_extract_10_features(self):
-        from tests.fixtures.synthetic_dem import make_sinkhole_geotiff
+        from tests.fixtures.synthetic_dem import make_sinkhole_geotiff, make_pass_input_from_geotiff
+        from magic_eyes.processing.pipeline import ProcessingPipeline
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
-            derivs = _get_native_derivatives(make_sinkhole_geotiff(d), d)
-            dem = _make_test_dem()
-            mask = _make_test_mask()
-            features = extract_features(dem, mask, derivs["slope"], derivs["tpi"], derivs["svf"], 1.0)
+            dem_path = make_sinkhole_geotiff(d)
+            result = ProcessingPipeline(output_dir=d / "out").process_dem_file(dem_path, force=True)
+            inp = make_pass_input_from_geotiff(dem_path, result.derivative_paths)
+            mask = _make_test_mask(size=200)
+            features = extract_features(inp.dem, mask, inp.derivatives["slope"], inp.derivatives["tpi"], inp.derivatives["svf"], 1.0)
             assert features.shape == (10,)
             assert len(FEATURE_NAMES) == 10
 
     def test_features_are_finite(self):
-        from tests.fixtures.synthetic_dem import make_sinkhole_geotiff
+        from tests.fixtures.synthetic_dem import make_sinkhole_geotiff, make_pass_input_from_geotiff
+        from magic_eyes.processing.pipeline import ProcessingPipeline
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
-            derivs = _get_native_derivatives(make_sinkhole_geotiff(d), d)
-            features = extract_features(_make_test_dem(), _make_test_mask(), derivs["slope"], derivs["tpi"], derivs["svf"], 1.0)
+            dem_path = make_sinkhole_geotiff(d)
+            result = ProcessingPipeline(output_dir=d / "out").process_dem_file(dem_path, force=True)
+            inp = make_pass_input_from_geotiff(dem_path, result.derivative_paths)
+            mask = _make_test_mask(size=200)
+            features = extract_features(inp.dem, mask, inp.derivatives["slope"], inp.derivatives["tpi"], inp.derivatives["svf"], 1.0)
             assert np.all(np.isfinite(features))
 
     def test_depth_feature_positive(self):
-        from tests.fixtures.synthetic_dem import make_sinkhole_geotiff
+        from tests.fixtures.synthetic_dem import make_sinkhole_geotiff, make_pass_input_from_geotiff
+        from magic_eyes.processing.pipeline import ProcessingPipeline
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
-            derivs = _get_native_derivatives(make_sinkhole_geotiff(d), d)
-            features = extract_features(_make_test_dem(), _make_test_mask(), derivs["slope"], derivs["tpi"], derivs["svf"], 1.0)
+            dem_path = make_sinkhole_geotiff(d)
+            result = ProcessingPipeline(output_dir=d / "out").process_dem_file(dem_path, force=True)
+            inp = make_pass_input_from_geotiff(dem_path, result.derivative_paths)
+            mask = _make_test_mask(size=200)
+            features = extract_features(inp.dem, mask, inp.derivatives["slope"], inp.derivatives["tpi"], inp.derivatives["svf"], 1.0)
             assert features[0] > 0
 
 
@@ -113,13 +123,15 @@ class TestRandomForestPass:
 
     @pytest.mark.skipif(not NATIVE_AVAILABLE, reason="Requires GDAL + WhiteboxTools")
     def test_works_with_trained_model(self):
-        from tests.fixtures.synthetic_dem import make_sinkhole_geotiff
+        from tests.fixtures.synthetic_dem import make_sinkhole_geotiff, make_pass_input_from_geotiff
+        from magic_eyes.processing.pipeline import ProcessingPipeline
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
-            derivs = _get_native_derivatives(make_sinkhole_geotiff(d), d)
-            dem = _make_test_dem()
+            dem_path = make_sinkhole_geotiff(d)
+            result = ProcessingPipeline(output_dir=d / "out").process_dem_file(dem_path, force=True)
+            inp = make_pass_input_from_geotiff(dem_path, result.derivative_paths)
 
-            X, y = extract_rf_training_data(dem, 1.0, [_make_test_mask()], derivs, n_negatives=20)
+            X, y = extract_rf_training_data(inp.dem, 1.0, [_make_test_mask(size=200)], inp.derivatives, n_negatives=20)
             assert X.shape[0] > 0
 
             model_path = d / "model.joblib"
@@ -133,22 +145,28 @@ class TestRandomForestPass:
 @pytest.mark.skipif(not NATIVE_AVAILABLE, reason="Requires GDAL + WhiteboxTools")
 class TestTrainingPipeline:
     def test_rf_training_data_extraction(self):
-        from tests.fixtures.synthetic_dem import make_sinkhole_geotiff
+        from tests.fixtures.synthetic_dem import make_sinkhole_geotiff, make_pass_input_from_geotiff
+        from magic_eyes.processing.pipeline import ProcessingPipeline
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
-            derivs = _get_native_derivatives(make_sinkhole_geotiff(d), d)
-            X, y = extract_rf_training_data(_make_test_dem(), 1.0, [_make_test_mask()], derivs, n_negatives=10)
+            dem_path = make_sinkhole_geotiff(d)
+            result = ProcessingPipeline(output_dir=d / "out").process_dem_file(dem_path, force=True)
+            inp = make_pass_input_from_geotiff(dem_path, result.derivative_paths)
+            X, y = extract_rf_training_data(inp.dem, 1.0, [_make_test_mask(size=200)], inp.derivatives, n_negatives=10)
             assert X.ndim == 2
             assert X.shape[1] == 10
             assert np.sum(y == 1) >= 1
             assert np.sum(y == 0) >= 1
 
     def test_rf_training_produces_model(self):
-        from tests.fixtures.synthetic_dem import make_sinkhole_geotiff
+        from tests.fixtures.synthetic_dem import make_sinkhole_geotiff, make_pass_input_from_geotiff
+        from magic_eyes.processing.pipeline import ProcessingPipeline
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
-            derivs = _get_native_derivatives(make_sinkhole_geotiff(d), d)
-            X, y = extract_rf_training_data(_make_test_dem(), 1.0, [_make_test_mask()], derivs, n_negatives=15)
+            dem_path = make_sinkhole_geotiff(d)
+            result = ProcessingPipeline(output_dir=d / "out").process_dem_file(dem_path, force=True)
+            inp = make_pass_input_from_geotiff(dem_path, result.derivative_paths)
+            X, y = extract_rf_training_data(inp.dem, 1.0, [_make_test_mask(size=200)], inp.derivatives, n_negatives=15)
             model_path = d / "model.joblib"
             metrics = train_random_forest(X, y, model_path, n_estimators=10)
             assert model_path.exists()
@@ -156,13 +174,15 @@ class TestTrainingPipeline:
             assert len(metrics["feature_importances"]) == 10
 
     def test_unet_patch_extraction(self):
-        from tests.fixtures.synthetic_dem import make_sinkhole_geotiff
+        from tests.fixtures.synthetic_dem import make_sinkhole_geotiff, make_pass_input_from_geotiff
+        from magic_eyes.processing.pipeline import ProcessingPipeline
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
-            derivs = _get_native_derivatives(make_sinkhole_geotiff(d, size=300), d)
-            dem = np.random.rand(300, 300).astype(np.float32) * 50 + 500
+            dem_path = make_sinkhole_geotiff(d, size=300)
+            result = ProcessingPipeline(output_dir=d / "out").process_dem_file(dem_path, force=True)
+            inp = make_pass_input_from_geotiff(dem_path, result.derivative_paths)
             patches_in, patches_out = extract_unet_patches(
-                dem, derivs, positive_centers=[(150, 150)], patch_size=128, n_negatives=2,
+                inp.dem, inp.derivatives, positive_centers=[(150, 150)], patch_size=128, n_negatives=2,
             )
             assert patches_in.shape[0] == 3
             assert patches_in.shape[1] == 5

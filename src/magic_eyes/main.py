@@ -29,7 +29,8 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=[
             "https://anomalies.martinospizza.dev",
-            "http://localhost:5173",  # dev
+            "https://holefinder.martinospizza.dev",
+            "http://localhost:5173",
             "http://localhost:8000",
         ],
         allow_credentials=True,
