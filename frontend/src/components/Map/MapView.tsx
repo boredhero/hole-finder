@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect } from 'react';
 import Map, { NavigationControl, ScaleControl, GeolocateControl, useMap } from 'react-map-gl/maplibre';
 import { MapboxOverlay } from '@deck.gl/mapbox';
-import { ScatterplotLayer } from '@deck.gl/layers';
 import { HeatmapLayer } from '@deck.gl/aggregation-layers';
 import { useControl } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { useStore } from '../../store';
-import { useDetections, useGroundTruth } from '../../hooks/useDetections';
+import { useDetections } from '../../hooks/useDetections';
+import { getDetectionDetail } from '../../api/client';
 import DrawControl from './DrawControl';
-import type { Basemap, Detection, GroundTruthSite } from '../../types';
+import type { Basemap, Detection } from '../../types';
 import { FEATURE_COLORS } from '../../types';
 
 const SATELLITE_STYLE = {
@@ -70,13 +70,6 @@ const BASEMAP_STYLES: Record<Basemap, string | object> = {
   dark: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
 };
 
-function hexToRgb(hex: string): [number, number, number] {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return [r, g, b];
-}
-
 function DeckGLOverlay(props: { layers: any[] }) {
   const overlay = useControl(() => new MapboxOverlay({ interleaved: false }));
   overlay.setProps({ layers: props.layers });
@@ -104,26 +97,178 @@ function FlyToHandler() {
   return null;
 }
 
+/** Adds MVT vector tile layers for detections + ground truth. Re-adds after basemap change. */
+function MVTLayerManager() {
+  const { current: mapRef } = useMap();
+  const showGroundTruth = useStore((s) => s.showGroundTruth);
+  const setSelectedDetection = useStore((s) => s.setSelectedDetection);
+  const setDrawerState = useStore((s) => s.setDrawerState);
+  const setSidebarOpen = useStore((s) => s.setSidebarOpen);
+
+  const addMVTLayers = useCallback((map: any) => {
+    // Detection tiles
+    if (!map.getSource('detections-mvt')) {
+      map.addSource('detections-mvt', {
+        type: 'vector',
+        tiles: [`${window.location.origin}/api/tiles/{z}/{x}/{y}.mvt?min_confidence=0.4`],
+        minzoom: 6,
+        maxzoom: 16,
+      });
+    }
+    if (!map.getLayer('detections-circles')) {
+      map.addLayer({
+        id: 'detections-circles',
+        type: 'circle',
+        source: 'detections-mvt',
+        'source-layer': 'detections',
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 4, 12, 8, 16, 14, 18, 20],
+          'circle-color': ['match', ['get', 'feature_type'],
+            'cave_entrance', FEATURE_COLORS.cave_entrance,
+            'mine_portal', FEATURE_COLORS.mine_portal,
+            'sinkhole', FEATURE_COLORS.sinkhole,
+            'depression', FEATURE_COLORS.depression,
+            'collapse_pit', FEATURE_COLORS.collapse_pit,
+            'spring', FEATURE_COLORS.spring,
+            'lava_tube', FEATURE_COLORS.lava_tube,
+            'salt_dome_collapse', FEATURE_COLORS.salt_dome_collapse,
+            FEATURE_COLORS.unknown,
+          ],
+          'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 8, 1, 14, 2, 18, 3],
+          'circle-stroke-color': 'rgba(255,255,255,0.7)',
+          'circle-opacity': 0.85,
+        },
+      });
+    }
+
+    // Ground truth tiles
+    if (!map.getSource('ground-truth-mvt')) {
+      map.addSource('ground-truth-mvt', {
+        type: 'vector',
+        tiles: [`${window.location.origin}/api/tiles/ground-truth/{z}/{x}/{y}.mvt`],
+        minzoom: 6,
+        maxzoom: 16,
+      });
+    }
+    if (!map.getLayer('ground-truth-circles')) {
+      map.addLayer({
+        id: 'ground-truth-circles',
+        type: 'circle',
+        source: 'ground-truth-mvt',
+        'source-layer': 'ground_truth',
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 5, 14, 10, 18, 16],
+          'circle-color': '#ffd700',
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#ffffff',
+          'circle-opacity': 0.9,
+        },
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    const map = mapRef?.getMap();
+    if (!map) return;
+
+    const setup = () => {
+      addMVTLayers(map);
+
+      // Click detection dot → fetch detail → show in drawer/sidebar
+      map.on('click', 'detections-circles', async (e: any) => {
+        const feature = e.features?.[0];
+        if (!feature?.properties?.id) return;
+        try {
+          const detail = await getDetectionDetail(feature.properties.id);
+          const d: Detection = {
+            id: detail.id,
+            lat: e.lngLat.lat,
+            lon: e.lngLat.lng,
+            feature_type: detail.feature_type,
+            confidence: detail.confidence,
+            depth_m: detail.depth_m,
+            area_m2: detail.area_m2,
+            circularity: detail.circularity,
+            wall_slope_deg: detail.wall_slope_deg,
+            source_passes: detail.source_passes,
+            morphometrics: detail.morphometrics,
+            validated: detail.validated,
+            validation_notes: detail.validation_notes,
+          };
+          setSelectedDetection(d);
+          setDrawerState('detail');
+          setSidebarOpen(true);
+        } catch {
+          // ignore fetch errors on click
+        }
+      });
+
+      // Cursor
+      map.on('mouseenter', 'detections-circles', () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'detections-circles', () => { map.getCanvas().style.cursor = ''; });
+    };
+
+    if (map.isStyleLoaded()) {
+      setup();
+    } else {
+      map.once('style.load', setup);
+    }
+
+    // Re-add layers after basemap change destroys them
+    map.on('style.load', () => {
+      // Terrain source also needs re-adding
+      if (!map.getSource('terrain-source')) {
+        map.addSource('terrain-source', {
+          type: 'raster-dem',
+          tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+          tileSize: 256,
+          encoding: 'terrarium',
+          maxzoom: 15,
+        });
+      }
+      addMVTLayers(map);
+    });
+  }, [mapRef, addMVTLayers, setSelectedDetection, setDrawerState, setSidebarOpen]);
+
+  // Toggle ground truth visibility
+  useEffect(() => {
+    const map = mapRef?.getMap();
+    if (!map || !map.getLayer('ground-truth-circles')) return;
+    map.setLayoutProperty('ground-truth-circles', 'visibility', showGroundTruth ? 'visible' : 'none');
+  }, [showGroundTruth, mapRef]);
+
+  return null;
+}
+
 const DEFAULT_VIEW = { longitude: -79.71, latitude: 39.80, zoom: 13, pitch: 45, bearing: -15 };
 
 export default function MapView() {
   const basemap = useStore((s) => s.basemap);
   const showHeatmap = useStore((s) => s.showHeatmap);
-  const showGroundTruth = useStore((s) => s.showGroundTruth);
   const show3DTerrain = useStore((s) => s.show3DTerrain);
   const terrainExaggeration = useStore((s) => s.terrainExaggeration);
   const setBbox = useStore((s) => s.setBbox);
-  const setSelectedDetection = useStore((s) => s.setSelectedDetection);
-  const setHoveredDetectionId = useStore((s) => s.setHoveredDetectionId);
-  const hoveredId = useStore((s) => s.hoveredDetectionId);
-  const setSidebarOpen = useStore((s) => s.setSidebarOpen);
   const drawingAOI = useStore((s) => s.drawingAOI);
   const setDrawnAOI = useStore((s) => s.setDrawnAOI);
   const storedViewState = useStore((s) => s.viewState);
   const setViewState = useStore((s) => s.setViewState);
+  const setSearchStale = useStore((s) => s.setSearchStale);
 
+  // Heatmap still uses deck.gl + useDetections (playground only)
   const { data: detections = [] } = useDetections();
-  const { data: groundTruth = [] } = useGroundTruth();
+
+  const heatmapLayers = showHeatmap && detections.length > 0
+    ? [new HeatmapLayer({
+        id: 'heatmap',
+        data: detections,
+        getPosition: (d: Detection) => [d.lon, d.lat],
+        getWeight: (d: Detection) => d.confidence,
+        radiusPixels: 40,
+        intensity: 1,
+        threshold: 0.1,
+        opacity: 0.6,
+      })]
+    : [];
 
   const handleMoveEnd = useCallback((evt: any) => {
     const map = evt.target;
@@ -137,87 +282,8 @@ export default function MapView() {
       pitch: map.getPitch(),
       bearing: map.getBearing(),
     });
-  }, [setBbox, setViewState]);
-
-  const layers = useMemo(() => {
-    const result: any[] = [];
-
-    // Heatmap layer
-    if (showHeatmap && detections.length > 0) {
-      result.push(new HeatmapLayer({
-        id: 'heatmap',
-        data: detections,
-        getPosition: (d: Detection) => [d.lon, d.lat],
-        getWeight: (d: Detection) => d.confidence,
-        radiusPixels: 40,
-        intensity: 1,
-        threshold: 0.1,
-        opacity: 0.6,
-      }));
-    }
-
-    // Detection scatter layer
-    if (detections.length > 0) {
-      result.push(new ScatterplotLayer({
-        id: 'detections',
-        data: detections,
-        getPosition: (d: Detection) => [d.lon, d.lat],
-        getRadius: (d: Detection) => 15 + d.confidence * 25,
-        getFillColor: (d: Detection) => {
-          const color = hexToRgb(FEATURE_COLORS[d.feature_type] || '#6b7280');
-          const alpha = d.id === hoveredId ? 255 : 160;
-          return [...color, alpha];
-        },
-        getLineColor: (d: Detection) => {
-          return d.id === hoveredId ? [255, 255, 255, 255] : [255, 255, 255, 180];
-        },
-        getLineWidth: (d: Detection) => d.id === hoveredId ? 3 : 2,
-        lineWidthMinPixels: 2,
-        stroked: true,
-        radiusMinPixels: 8,
-        radiusMaxPixels: 40,
-        pickable: true,
-        onClick: ({ object }: { object?: Detection }) => {
-          if (object) {
-            setSelectedDetection(object);
-            setSidebarOpen(true);
-          }
-        },
-        onHover: ({ object }: { object?: Detection }) => {
-          setHoveredDetectionId(object?.id ?? null);
-        },
-        updateTriggers: {
-          getFillColor: [hoveredId],
-          getLineColor: [hoveredId],
-          getLineWidth: [hoveredId],
-        },
-      }));
-    }
-
-    // Ground truth markers
-    if (showGroundTruth && groundTruth.length > 0) {
-      result.push(new ScatterplotLayer({
-        id: 'ground-truth',
-        data: groundTruth,
-        getPosition: (d: GroundTruthSite) => [d.lon, d.lat],
-        getRadius: 15,
-        getFillColor: [255, 215, 0, 200],
-        getLineColor: [255, 255, 255, 255],
-        stroked: true,
-        lineWidthMinPixels: 2,
-        radiusMinPixels: 10,
-        radiusMaxPixels: 20,
-        pickable: true,
-        onClick: ({ object }: { object?: GroundTruthSite }) => {
-          if (object) {
-            // Show in sidebar
-          }
-        },
-      }));
-    }
-
-    return result;
-  }, [detections, groundTruth, showHeatmap, showGroundTruth, hoveredId, setSelectedDetection, setHoveredDetectionId, setSidebarOpen]);
+    setSearchStale(true);
+  }, [setBbox, setViewState, setSearchStale]);
 
   return (
     <Map
@@ -230,7 +296,6 @@ export default function MapView() {
         const bounds = map.getBounds();
         setBbox([bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]);
 
-        // Add terrain source for 3D
         if (!map.getSource('terrain-source')) {
           map.addSource('terrain-source', {
             type: 'raster-dem',
@@ -242,9 +307,9 @@ export default function MapView() {
         }
       }}
       terrain={show3DTerrain && basemap !== 'lidar' ? { source: 'terrain-source', exaggeration: terrainExaggeration } : undefined}
-      cursor={hoveredId ? 'pointer' : 'grab'}
     >
-      <DeckGLOverlay layers={layers} />
+      <DeckGLOverlay layers={heatmapLayers} />
+      <MVTLayerManager />
       <FlyToHandler />
       <DrawControl
         active={drawingAOI}

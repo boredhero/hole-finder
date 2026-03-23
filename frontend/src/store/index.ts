@@ -60,6 +60,10 @@ interface AppState {
   setUserLocation: (loc: { lat: number; lon: number }) => void;
   drawerState: 'collapsed' | 'expanded' | 'detail';
   setDrawerState: (s: 'collapsed' | 'expanded' | 'detail') => void;
+  searchBbox: [number, number, number, number] | null;
+  setSearchBbox: (b: [number, number, number, number]) => void;
+  searchStale: boolean;
+  setSearchStale: (v: boolean) => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -109,4 +113,8 @@ export const useStore = create<AppState>((set) => ({
   setUserLocation: (loc) => set({ userLocation: loc }),
   drawerState: 'collapsed',
   setDrawerState: (s) => set({ drawerState: s }),
+  searchBbox: null,
+  setSearchBbox: (b) => set({ searchBbox: b, searchStale: false }),
+  searchStale: false,
+  setSearchStale: (v) => set({ searchStale: v }),
 }));

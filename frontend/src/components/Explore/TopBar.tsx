@@ -1,10 +1,10 @@
 import { Link } from 'react-router-dom';
 import { useStore } from '../../store';
 import type { Basemap } from '../../types';
-import { Flame, MapPin, Settings2 } from 'lucide-react';
+import { MapPin, Settings2 } from 'lucide-react';
 
 const BASEMAPS: { value: Basemap; label: string }[] = [
-  { value: 'satellite', label: 'Sat' },
+  { value: 'satellite', label: 'Satellite' },
   { value: 'lidar', label: 'LiDAR' },
   { value: 'topo', label: 'Topo' },
   { value: 'dark', label: 'Dark' },
@@ -13,8 +13,6 @@ const BASEMAPS: { value: Basemap; label: string }[] = [
 export default function TopBar() {
   const basemap = useStore((s) => s.basemap);
   const setBasemap = useStore((s) => s.setBasemap);
-  const showHeatmap = useStore((s) => s.showHeatmap);
-  const toggleHeatmap = useStore((s) => s.toggleHeatmap);
   const showGroundTruth = useStore((s) => s.showGroundTruth);
   const toggleGroundTruth = useStore((s) => s.toggleGroundTruth);
 
@@ -25,7 +23,7 @@ export default function TopBar() {
         <span className="text-base font-bold text-white tracking-wide whitespace-nowrap">HOLE FINDER</span>
 
         {/* Basemap pills */}
-        <div className="flex gap-0.5 bg-slate-800/80 rounded-lg p-0.5 ml-3">
+        <div className="flex gap-1 bg-slate-800/80 rounded-lg p-1 ml-3">
           {BASEMAPS.map((b) => (
             <button
               key={b.value}
@@ -41,13 +39,6 @@ export default function TopBar() {
 
         {/* Layer toggles */}
         <div className="flex gap-1.5 ml-2">
-          <button
-            onClick={toggleHeatmap}
-            className={`p-2 rounded-lg transition-colors ${showHeatmap ? 'bg-orange-600/30 text-orange-400' : 'text-slate-500 hover:text-slate-300'}`}
-            title="Heatmap"
-          >
-            <Flame size={18} />
-          </button>
           <button
             onClick={toggleGroundTruth}
             className={`p-2 rounded-lg transition-colors ${showGroundTruth ? 'bg-yellow-600/30 text-yellow-400' : 'text-slate-500 hover:text-slate-300'}`}

@@ -3,55 +3,57 @@ import { Link } from 'react-router-dom';
 import MapView from '../components/Map/MapView';
 import TopBar from '../components/Explore/TopBar';
 import BottomDrawer from '../components/Explore/BottomDrawer';
+import SearchButton from '../components/Explore/SearchButton';
 import { useRegions } from '../hooks/useRegions';
 import { useStore } from '../store';
-import { getUserBbox, geometryToBbox, formatRegionName } from '../utils';
-import { Locate, Map as MapIcon, ArrowLeft, Settings2, Loader2 } from 'lucide-react';
+import { geometryToBbox, formatRegionName } from '../utils';
+import { Locate, Map as MapIcon, ArrowLeft, Settings2, Loader2, AlertCircle } from 'lucide-react';
 
 type Phase = 'splash' | 'regionPicker' | 'explore';
 
 export default function LandingPage() {
   const [phase, setPhase] = useState<Phase>('splash');
   const [geoLoading, setGeoLoading] = useState(false);
+  const [geoError, setGeoError] = useState<string | null>(null);
 
-  const setBbox = useStore((s) => s.setBbox);
   const setTargetViewState = useStore((s) => s.setTargetViewState);
   const setUserLocation = useStore((s) => s.setUserLocation);
+  const setSearchStale = useStore((s) => s.setSearchStale);
 
   const handleFindNearMe = useCallback(() => {
     if (!navigator.geolocation) {
-      setPhase('regionPicker');
+      setGeoError("Your browser doesn't support geolocation.");
       return;
     }
     setGeoLoading(true);
+    setGeoError(null);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude: lat, longitude: lon } = pos.coords;
         setUserLocation({ lat, lon });
-        const bbox = getUserBbox(lat, lon, 100);
-        setBbox(bbox);
-        setTargetViewState({ longitude: lon, latitude: lat, zoom: 10, pitch: 45, bearing: -15 });
+        setTargetViewState({ longitude: lon, latitude: lat, zoom: 14, pitch: 45, bearing: -15 });
+        setSearchStale(true);
         setGeoLoading(false);
         setPhase('explore');
       },
       () => {
         setGeoLoading(false);
-        setPhase('regionPicker');
+        setGeoError("Couldn't get your location. Try again or pick a region.");
       },
       { timeout: 10000 },
     );
-  }, [setBbox, setTargetViewState, setUserLocation]);
+  }, [setTargetViewState, setUserLocation, setSearchStale]);
 
   const handlePickRegion = useCallback((geometry: any) => {
     const bbox = geometryToBbox(geometry);
-    setBbox(bbox);
     const centerLon = (bbox[0] + bbox[2]) / 2;
     const centerLat = (bbox[1] + bbox[3]) / 2;
     const lonSpan = bbox[2] - bbox[0];
     const zoom = lonSpan > 3 ? 7 : lonSpan > 1 ? 9 : 11;
     setTargetViewState({ longitude: centerLon, latitude: centerLat, zoom, pitch: 45, bearing: -15 });
+    setSearchStale(true);
     setPhase('explore');
-  }, [setBbox, setTargetViewState]);
+  }, [setTargetViewState, setSearchStale]);
 
   if (phase === 'explore') {
     return (
@@ -60,6 +62,7 @@ export default function LandingPage() {
           <MapView />
         </div>
         <TopBar />
+        <SearchButton />
         <BottomDrawer />
       </div>
     );
@@ -87,6 +90,14 @@ export default function LandingPage() {
         <p className="text-slate-400 text-lg md:text-xl mb-10 leading-relaxed">
           Discover caves, mines, sinkholes & more hidden in LiDAR terrain data
         </p>
+
+        {/* Geo error */}
+        {geoError && (
+          <div className="flex items-center gap-2 bg-red-900/30 border border-red-700/50 text-red-300 text-sm rounded-xl px-4 py-3 mb-4">
+            <AlertCircle size={16} className="flex-shrink-0" />
+            {geoError}
+          </div>
+        )}
 
         {/* Buttons */}
         <div className="flex flex-col gap-4">

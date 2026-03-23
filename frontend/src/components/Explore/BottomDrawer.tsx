@@ -1,17 +1,20 @@
 import { useRef, useCallback, useEffect } from 'react';
 import { useStore } from '../../store';
-import { useDetections } from '../../hooks/useDetections';
+import { useExploreDetections } from '../../hooks/useDetections';
 import DetectionCard from './DetectionCard';
-import { ChevronUp, ChevronDown, X } from 'lucide-react';
+import { ChevronUp, ChevronDown, X, Loader2, Search } from 'lucide-react';
 
 export default function BottomDrawer() {
-  const { data: detections = [] } = useDetections();
+  const { data: detections = [], isLoading, isFetching } = useExploreDetections();
   const drawerState = useStore((s) => s.drawerState);
   const setDrawerState = useStore((s) => s.setDrawerState);
   const selectedDetection = useStore((s) => s.selectedDetection);
   const setSelectedDetection = useStore((s) => s.setSelectedDetection);
   const userLocation = useStore((s) => s.userLocation);
   const setTargetViewState = useStore((s) => s.setTargetViewState);
+  const searchBbox = useStore((s) => s.searchBbox);
+  const bbox = useStore((s) => s.bbox);
+  const setSearchBbox = useStore((s) => s.setSearchBbox);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const touchStartY = useRef<number>(0);
@@ -35,7 +38,6 @@ export default function BottomDrawer() {
     }
   }, [setSelectedDetection, setTargetViewState, drawerState, setDrawerState]);
 
-  // Touch swipe handling
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     touchStartY.current = e.touches[0].clientY;
   }, []);
@@ -49,15 +51,7 @@ export default function BottomDrawer() {
     }
   }, [drawerState, setDrawerState]);
 
-  if (detections.length === 0) {
-    return (
-      <div className="fixed bottom-0 inset-x-0 z-30 bg-slate-900/95 backdrop-blur-lg border-t border-slate-700 rounded-t-2xl p-5 text-center text-base text-slate-400">
-        No detections in this area. Try zooming out or picking a different region.
-      </div>
-    );
-  }
-
-  // Detail view — single card expanded
+  // Detail view — single card expanded (from map dot click or card click)
   if (drawerState === 'detail' && selectedDetection) {
     return (
       <div className="fixed bottom-0 inset-x-0 z-30 bg-slate-900/95 backdrop-blur-lg border-t border-slate-700 rounded-t-2xl max-h-[60vh] overflow-y-auto">
@@ -79,6 +73,43 @@ export default function BottomDrawer() {
     );
   }
 
+  // No search yet — prompt user
+  if (!searchBbox) {
+    return (
+      <div className="fixed bottom-0 inset-x-0 z-30 bg-slate-900/95 backdrop-blur-lg border-t border-slate-700 rounded-t-2xl p-5">
+        <div className="text-center">
+          <p className="text-base text-slate-400 mb-3">Tap "Search this area" to find detections here</p>
+          <button
+            onClick={() => bbox && setSearchBbox(bbox)}
+            disabled={!bbox}
+            className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium px-5 py-2.5 rounded-full transition-colors"
+          >
+            <Search size={16} /> Search this area
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Loading
+  if (isLoading || isFetching) {
+    return (
+      <div className="fixed bottom-0 inset-x-0 z-30 bg-slate-900/95 backdrop-blur-lg border-t border-slate-700 rounded-t-2xl p-5 text-center">
+        <Loader2 size={24} className="animate-spin text-blue-400 mx-auto mb-2" />
+        <p className="text-sm text-slate-400">Searching for detections...</p>
+      </div>
+    );
+  }
+
+  // No results
+  if (detections.length === 0) {
+    return (
+      <div className="fixed bottom-0 inset-x-0 z-30 bg-slate-900/95 backdrop-blur-lg border-t border-slate-700 rounded-t-2xl p-5 text-center text-base text-slate-400">
+        No detections found here. Try panning to a different area and searching again.
+      </div>
+    );
+  }
+
   // Expanded view — vertical list
   if (drawerState === 'expanded') {
     return (
@@ -88,7 +119,6 @@ export default function BottomDrawer() {
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        {/* Handle bar */}
         <div className="flex justify-center pt-2 pb-1">
           <div className="w-10 h-1 bg-slate-600 rounded-full" />
         </div>
@@ -120,7 +150,6 @@ export default function BottomDrawer() {
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Handle bar */}
       <div className="flex justify-center pt-2 pb-1">
         <div className="w-10 h-1 bg-slate-600 rounded-full" />
       </div>
@@ -137,7 +166,7 @@ export default function BottomDrawer() {
         ref={scrollRef}
         className="flex gap-3 overflow-x-auto px-5 pb-5 snap-x snap-mandatory scrollbar-hide"
       >
-        {detections.slice(0, 50).map((d) => (
+        {detections.map((d) => (
           <DetectionCard
             key={d.id}
             detection={d}
