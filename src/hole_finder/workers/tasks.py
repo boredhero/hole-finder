@@ -289,35 +289,98 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
             _update_job("FAILED", 40, "No tiles downloaded successfully")
             return
 
-        # Process each tile
+        # Process each tile — call pipeline directly, NOT via Celery task
+        # (we're already inside a Celery task, so calling another task
+        # as a function triggers broker routing which fails without a task ID)
+        from hole_finder.processing.pipeline import ProcessingPipeline
+
+        import hole_finder.detection.passes  # register passes
+
+        from geoalchemy2.shape import from_shape
+        from pyproj import Transformer
+        from shapely.geometry import Point
+
+        from hole_finder.db.models import Detection
+        from hole_finder.db.models import FeatureType as DBFeatureType
+        from hole_finder.detection.runner import PassRunner
+
+        config_path = Path(f"/app/configs/passes/{pass_config}.toml")
+        if not config_path.exists():
+            config_path = settings.data_dir.parent / f"configs/passes/{pass_config}.toml"
+        runner = PassRunner.from_toml(config_path)
+
+        ft_map = {
+            "sinkhole": DBFeatureType.SINKHOLE,
+            "cave_entrance": DBFeatureType.CAVE_ENTRANCE,
+            "mine_portal": DBFeatureType.MINE_PORTAL,
+            "depression": DBFeatureType.DEPRESSION,
+            "collapse_pit": DBFeatureType.COLLAPSE_PIT,
+            "unknown": DBFeatureType.UNKNOWN,
+        }
+
         total_detections = 0
         for i, tile_path in enumerate(downloaded):
-            progress = 40 + (i / len(downloaded)) * 30
+            progress = 40 + (i / len(downloaded)) * 50
             _update_job("RUNNING", progress, f"Processing tile {i+1}/{len(downloaded)}")
 
+            # Process: PDAL → DEM → derivatives
             with profiler.stage(f"process_tile_{i}", parent="tile_processing") as ctx:
                 try:
-                    result = process_tile(tile_path)
-                    ctx["dem_path"] = result["dem_path"]
+                    pipeline = ProcessingPipeline(output_dir=settings.processed_dir)
+                    input_path = Path(tile_path)
+                    if input_path.suffix in (".laz", ".las"):
+                        tile_result = pipeline.process_point_cloud(input_path)
+                    else:
+                        tile_result = pipeline.process_dem_file(input_path)
+                    ctx["dem_path"] = str(tile_result.dem_path)
+                    ctx["derivatives"] = len(tile_result.derivative_paths)
                 except Exception as e:
                     log.error("process_tile_failed", tile=tile_path, error=str(e))
                     ctx["error"] = str(e)
                     continue
 
-            # Run detection
-            progress = 70 + (i / len(downloaded)) * 25
-            _update_job("RUNNING", progress, f"Detecting on tile {i+1}/{len(downloaded)}")
-
+            # Detect
             with profiler.stage(f"detect_tile_{i}", parent="tile_detection") as ctx:
                 try:
-                    det_result = run_detection(
-                        result["dem_path"],
-                        result["derivative_paths"],
-                        pass_config,
+                    candidates = runner.run_on_dem(
+                        tile_result.dem_path,
+                        tile_result.derivative_paths,
                     )
-                    total_detections += det_result["stored_detections"]
-                    ctx["detections"] = det_result["stored_detections"]
-                    ctx["raw_candidates"] = det_result["raw_candidates"]
+
+                    # Filter and store
+                    crs_code = tile_result.crs or 32617
+                    transformer = Transformer.from_crs(f"EPSG:{crs_code}", "EPSG:4326", always_xy=True)
+                    good = [c for c in candidates
+                            if c.score > 0.4
+                            and c.morphometrics.get("area_m2", 0) > 50
+                            and (c.morphometrics.get("depth_m", 0)
+                                 or c.morphometrics.get("lrm_anomaly_m", 0)) < 100]
+
+                    async def _store_detections():
+                        async with _async_session() as session:
+                            for c in good:
+                                lon, lat = transformer.transform(c.geometry.x, c.geometry.y)
+                                det = Detection(
+                                    feature_type=ft_map.get(c.feature_type.value, DBFeatureType.UNKNOWN),
+                                    geometry=from_shape(Point(lon, lat), srid=4326),
+                                    confidence=c.score,
+                                    depth_m=c.morphometrics.get("depth_m") or c.morphometrics.get("lrm_anomaly_m"),
+                                    area_m2=c.morphometrics.get("area_m2"),
+                                    circularity=c.morphometrics.get("circularity"),
+                                    wall_slope_deg=c.morphometrics.get("wall_slope_deg"),
+                                    source_passes=c.metadata.get("source_passes") if c.metadata else None,
+                                    morphometrics={k: float(v) if isinstance(v, (int, float)) else v
+                                                   for k, v in c.morphometrics.items()},
+                                )
+                                session.add(det)
+                            await session.commit()
+
+                    asyncio.run(_store_detections())
+                    total_detections += len(good)
+                    ctx["raw_candidates"] = len(candidates)
+                    ctx["stored"] = len(good)
+                    log.info("tile_detection_complete", tile=tile_path,
+                             raw=len(candidates), stored=len(good))
                 except Exception as e:
                     log.error("detect_tile_failed", tile=tile_path, error=str(e))
                     ctx["error"] = str(e)
