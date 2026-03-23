@@ -116,7 +116,7 @@ def run_detection(self, dem_path: str, derivative_paths: dict, pass_config_name:
         "unknown": DBFeatureType.UNKNOWN,
     }
 
-    good = [c for c in candidates if c.score > 0.3 and c.morphometrics.get("area_m2", 0) > 30]
+    good = [c for c in candidates if c.score > 0.4 and c.morphometrics.get("area_m2", 0) > 50]
 
     async def _store():
         async with async_session_factory() as session:

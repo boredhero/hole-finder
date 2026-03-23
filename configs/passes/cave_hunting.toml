@@ -4,49 +4,36 @@ description = "Optimized for cave entrance detection"
 passes = [
     "local_relief_model",
     "fill_difference",
-    "curvature",
     "sky_view_factor",
-    "point_density",
-    "multi_return",
     "morphometric_filter",
 ]
-min_confidence = 0.35
+min_confidence = 0.4
 
 [weights]
 local_relief_model = 1.5
-fill_difference = 1.0
-curvature = 0.8
-sky_view_factor = 1.2
-point_density = 1.3
-multi_return = 1.4
-morphometric_filter = 0.0  # filter only, no score contribution
+fill_difference = 1.2
+sky_view_factor = 1.0
+morphometric_filter = 0.0
 
 [passes.local_relief_model]
 kernel_sizes = [50, 100, 200]
-threshold_m = 0.3
-
-[passes.fill_difference]
-min_depth_m = 0.5
+threshold_m = 1.0
+min_area_m2 = 50
 max_area_m2 = 5000
 
-[passes.curvature]
-type = "total"
-threshold = -0.02
+[passes.fill_difference]
+min_depth_m = 1.0
+min_area_m2 = 50
+max_area_m2 = 5000
 
 [passes.sky_view_factor]
 radius_m = 30
 n_directions = 16
 threshold = 0.75
-
-[passes.point_density]
-cell_size_m = 2.0
-z_score_threshold = -2.5
-
-[passes.multi_return]
-search_radius_m = 5.0
-min_multi_return_ratio = 0.4
+min_area_pixels = 10
 
 [passes.morphometric_filter]
-min_depth_m = 0.3
+min_depth_m = 0.5
+min_area_m2 = 100
 max_area_m2 = 4000
-min_circularity = 0.15
+min_circularity = 0.2
