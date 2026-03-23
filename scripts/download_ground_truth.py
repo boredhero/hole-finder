@@ -41,6 +41,31 @@ DOWNLOADS = {
         "description": "USGS National Karst Map (all US)",
         "notes": "Download GIS shapefile package (269MB)",
     },
+    "nc_caves": {
+        "url": "https://mrdata.usgs.gov/mrds/",
+        "description": "NC Cave Survey + USGS MRDS mines (1500+ caves, 700+ mica mines)",
+        "notes": "Loaded via USGS MRDS WFS query filtered to North Carolina",
+    },
+    "md_karst": {
+        "url": "https://www.mgs.md.gov/geology/caves/caves_in_maryland.html",
+        "description": "MD Geological Survey karst (53 caves, 2100+ karst features)",
+        "notes": "Loaded via USGS MRDS WFS query filtered to Maryland",
+    },
+    "ma_mines": {
+        "url": "https://mrdata.usgs.gov/mrds/",
+        "description": "MA USGS MRDS mines (160+ mines, Berkshire marble belt)",
+        "notes": "Loaded via USGS MRDS WFS query filtered to Massachusetts",
+    },
+    "la_subsidence": {
+        "url": "https://www.lsu.edu/lgs/",
+        "description": "LA salt dome collapse and subsidence sites",
+        "notes": "Known sites hardcoded + USGS MRDS salt/brine mining sites",
+    },
+    "ca_blm_aml": {
+        "url": "https://mrdata.usgs.gov/mrds/",
+        "description": "CA abandoned mines (22K+ MRDS) + known lava tubes and caves",
+        "notes": "Known cave sites hardcoded + USGS MRDS query for CA mines",
+    },
 }
 
 

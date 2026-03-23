@@ -1,0 +1,17 @@
+{
+  "type": "Feature",
+  "properties": {
+    "name": "Northern California Lava Fields",
+    "description": "Modoc Plateau lava tubes, Lava Beds National Monument"
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[
+      [-122.5, 41.0],
+      [-121.0, 41.0],
+      [-121.0, 42.0],
+      [-122.5, 42.0],
+      [-122.5, 41.0]
+    ]]
+  }
+}

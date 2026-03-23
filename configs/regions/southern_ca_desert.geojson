@@ -1,0 +1,17 @@
+{
+  "type": "Feature",
+  "properties": {
+    "name": "Southern California Desert",
+    "description": "Southern California desert mining districts"
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[
+      [-118.0, 33.5],
+      [-115.5, 33.5],
+      [-115.5, 35.5],
+      [-118.0, 35.5],
+      [-118.0, 33.5]
+    ]]
+  }
+}

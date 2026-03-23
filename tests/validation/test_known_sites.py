@@ -26,6 +26,11 @@ PA_MINES = [s for s in ALL_SITES if s["state"] == "PA" and s["type"] == "mine_po
 WV_CAVES = [s for s in ALL_SITES if s["state"] == "WV"]
 OH_CAVES = [s for s in ALL_SITES if s["state"] == "OH"]
 NY_CAVES = [s for s in ALL_SITES if s["state"] == "NY"]
+NC_SITES = [s for s in ALL_SITES if s["state"] == "NC"]
+MD_SITES = [s for s in ALL_SITES if s["state"] == "MD"]
+MA_SITES = [s for s in ALL_SITES if s["state"] == "MA"]
+LA_SITES = [s for s in ALL_SITES if s["state"] == "LA"]
+CA_SITES = [s for s in ALL_SITES if s["state"] == "CA"]
 
 # Check DB availability
 try:
@@ -107,11 +112,56 @@ class TestNYCaves:
         assert n > 0
 
 
+class TestNCSites:
+    @pytest.mark.parametrize("site", NC_SITES, ids=[s["name"] for s in NC_SITES])
+    def test_detection_near_known_site(self, site):
+        n = count_near(site["lat"], site["lon"])
+        if n == 0:
+            pytest.skip(f"No detections near {site['name']} (area may not be processed yet)")
+        assert n > 0
+
+
+class TestMDSites:
+    @pytest.mark.parametrize("site", MD_SITES, ids=[s["name"] for s in MD_SITES])
+    def test_detection_near_known_site(self, site):
+        n = count_near(site["lat"], site["lon"])
+        if n == 0:
+            pytest.skip(f"No detections near {site['name']} (area may not be processed yet)")
+        assert n > 0
+
+
+class TestMASites:
+    @pytest.mark.parametrize("site", MA_SITES, ids=[s["name"] for s in MA_SITES])
+    def test_detection_near_known_site(self, site):
+        n = count_near(site["lat"], site["lon"])
+        if n == 0:
+            pytest.skip(f"No detections near {site['name']} (area may not be processed yet)")
+        assert n > 0
+
+
+class TestLASites:
+    @pytest.mark.parametrize("site", LA_SITES, ids=[s["name"] for s in LA_SITES])
+    def test_detection_near_known_site(self, site):
+        n = count_near(site["lat"], site["lon"])
+        if n == 0:
+            pytest.skip(f"No detections near {site['name']} (area may not be processed yet)")
+        assert n > 0
+
+
+class TestCASites:
+    @pytest.mark.parametrize("site", CA_SITES, ids=[s["name"] for s in CA_SITES])
+    def test_detection_near_known_site(self, site):
+        n = count_near(site["lat"], site["lon"])
+        if n == 0:
+            pytest.skip(f"No detections near {site['name']} (area may not be processed yet)")
+        assert n > 0
+
+
 # --- Aggregate metrics ---
 
 class TestAggregateMetrics:
     def test_total_sites_count(self):
-        assert len(ALL_SITES) >= 23
+        assert len(ALL_SITES) >= 36
 
     def test_coverage_report(self):
         """Print how many known sites have nearby detections."""

@@ -95,8 +95,8 @@ src/hole_finder/
     tasks.py                       # download_tile, process_tile, run_detection, run_ml_pass
   ml/training.py                   # RF/UNet training data extraction
   ingest/
-    sources/                       # USGS 3DEP, PASDA, WV, NY, OH
-    ground_truth/                  # Loaders for PASDA karst (111K), PA AML (11K), USGS NY, etc
+    sources/                       # USGS 3DEP, PASDA, WV, NY, OH, NC, MD
+    ground_truth/                  # Loaders for PASDA karst (111K), PA AML (11K), USGS NY, OH, NC, MD, MA, LA, CA
 
 frontend/src/
   components/Map/MapView.tsx       # MapLibre + deck.gl + 3D terrain
@@ -106,12 +106,12 @@ frontend/src/
   hooks/                           # TanStack Query hooks
   api/client.ts                    # Typed fetch wrapper
 
-configs/passes/                    # TOML detection configs (cave_hunting, sinkhole_survey, mine_detection)
-configs/regions/                   # 5 GeoJSON region polygons
+configs/passes/                    # TOML detection configs (cave_hunting, sinkhole_survey, mine_detection, salt_dome_detection, lava_tube_detection)
+configs/regions/                   # 13 GeoJSON region polygons (PA, WV, OH, NY, NC, MD, MA, LA, CA)
 
 tests/unit/                        # 116+ tests using native GDAL/WBT pipeline
-tests/validation/                  # Parametrized tests against 23 known sites
-tests/fixtures/known_sites.json    # 23 validation coordinates
+tests/validation/                  # Parametrized tests against 36 known sites
+tests/fixtures/known_sites.json    # 36 validation coordinates
 ```
 
 ## Database Schema (PostGIS)
@@ -185,7 +185,7 @@ After detection, transform UTM→WGS84 with pyproj, create Detection ORM objects
 
 ## Current State
 - 798 real detections from Laurel Caverns tile stored in PostGIS
-- 23 validation sites seeded (PA, WV, OH, NY caves + mines)
+- 36 validation sites seeded (PA, WV, OH, NY, NC, MD, MA, LA, CA caves + mines + sinkholes)
 - 116+ tests passing on .111
 - Both domains live with TLS
 - 1 COPC tile downloaded and processed (28.2M points → 1500x1500 DEM → 11 derivatives → detections)

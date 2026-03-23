@@ -6,6 +6,8 @@ from shapely.geometry import Polygon, shape
 
 from hole_finder.config import settings
 from hole_finder.ingest.sources.base import DataSource, TileInfo
+from hole_finder.ingest.sources.md_lidar import MDLidarSource
+from hole_finder.ingest.sources.nc_lidar import NCLidarSource
 from hole_finder.ingest.sources.ny_lidar import NYLidarSource
 from hole_finder.ingest.sources.oh_ogrip import OHOGRIPSource
 from hole_finder.ingest.sources.pasda import PASDASource
@@ -20,6 +22,8 @@ SOURCE_REGISTRY: dict[str, type[DataSource]] = {
     "wv": WVLidarSource,
     "ny": NYLidarSource,
     "oh": OHOGRIPSource,
+    "nc": NCLidarSource,
+    "md": MDLidarSource,
 }
 
 
@@ -38,6 +42,14 @@ def get_sources_for_region(region_name: str) -> list[str]:
         "west_virginia": ["usgs_3dep", "wv"],
         "eastern_ohio": ["usgs_3dep", "oh"],
         "upstate_ny": ["usgs_3dep", "ny"],
+        "western_nc": ["usgs_3dep", "nc"],
+        "western_md": ["usgs_3dep", "md"],
+        "western_ma": ["usgs_3dep"],
+        "south_louisiana": ["usgs_3dep"],
+        "north_louisiana": ["usgs_3dep"],
+        "northern_ca_lava": ["usgs_3dep"],
+        "sierra_nevada": ["usgs_3dep"],
+        "southern_ca_desert": ["usgs_3dep"],
     }
     return region_sources.get(region_name, ["usgs_3dep"])
 

@@ -1,0 +1,17 @@
+{
+  "type": "Feature",
+  "properties": {
+    "name": "Western Massachusetts",
+    "description": "Berkshire County marble belt, pyrite and mica mines"
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[
+      [-73.5, 42.0],
+      [-72.5, 42.0],
+      [-72.5, 42.8],
+      [-73.5, 42.8],
+      [-73.5, 42.0]
+    ]]
+  }
+}

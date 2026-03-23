@@ -1,0 +1,38 @@
+[pipeline]
+name = "lava_tube_detection"
+description = "Optimized for lava tube collapse and skylight detection (California)"
+passes = [
+    "fill_difference",
+    "local_relief_model",
+    "sky_view_factor",
+    "morphometric_filter",
+]
+min_confidence = 0.4
+
+[weights]
+fill_difference = 1.2
+local_relief_model = 1.5
+sky_view_factor = 1.3
+morphometric_filter = 0.0
+
+[passes.fill_difference]
+min_depth_m = 0.5
+min_area_m2 = 50
+max_area_m2 = 50000
+
+[passes.local_relief_model]
+kernel_sizes = [30, 75, 150]
+threshold_m = 0.5
+min_area_m2 = 50
+max_area_m2 = 50000
+
+[passes.sky_view_factor]
+radius_m = 20
+n_directions = 16
+threshold = 0.7
+min_area_pixels = 10
+
+[passes.morphometric_filter]
+min_depth_m = 0.3
+max_area_m2 = 50000
+min_circularity = 0.05

@@ -157,6 +157,14 @@ Processes free, publicly available LiDAR elevation data (USGS 3DEP, PASDA, state
 - West Virginia (Greenbrier County karst, extensive coal mining)
 - Eastern Ohio (coal mine regions, Lockport Formation karst)
 - Upstate New York (Niagara Escarpment, Lockport dolomite)
+- Western North Carolina (Blue Ridge karst, Spruce Pine mica mining, Piedmont gold mines)
+- Western Maryland (Hagerstown Valley karst, western MD coal mining)
+- Western Massachusetts (Berkshire County marble belt, pyrite and mica mines)
+- South Louisiana (salt dome collapse sinkholes, Bayou Corne area)
+- North Louisiana (limestone karst)
+- Northern California (Modoc Plateau lava tubes, Lava Beds National Monument)
+- Sierra Nevada (gold country, marble caverns, historic mines)
+- Southern California Desert (desert mining districts)
 
 ## Tech Stack
 
@@ -190,10 +198,12 @@ All data sources are free and require no API keys:
 - **USGS 3DEP** via Planetary Computer STAC API (COPC from `s3://usgs-lidar-public/`)
 - **PASDA** (Pennsylvania Spatial Data Access)
 - **WV/NY/OH** state GIS portals
+- **NC OneMap** (North Carolina statewide tile index)
+- **MD iMAP** (Maryland enterprise GIS LiDAR portal)
 
 ## Validation
 
-23 known cave, mine, and sinkhole sites with GPS coordinates across PA, WV, OH, and NY used as ground truth. Bulk validation against 111,000+ PASDA karst features and 11,249 PA abandoned mines.
+36 known cave, mine, sinkhole, and lava tube sites with GPS coordinates across PA, WV, OH, NY, NC, MD, MA, LA, and CA used as ground truth. Bulk validation against 111,000+ PASDA karst features, 11,249 PA abandoned mines, and USGS MRDS records across all target states.
 
 ## License
 

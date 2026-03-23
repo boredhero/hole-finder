@@ -21,6 +21,8 @@ class TestSourceRegistry:
         assert "wv" in SOURCE_REGISTRY
         assert "ny" in SOURCE_REGISTRY
         assert "oh" in SOURCE_REGISTRY
+        assert "nc" in SOURCE_REGISTRY
+        assert "md" in SOURCE_REGISTRY
 
     def test_get_source(self):
         source = get_source("usgs_3dep")
@@ -42,6 +44,24 @@ class TestRegionSources:
         assert "usgs_3dep" in sources
         assert "wv" in sources
 
+    def test_western_nc_sources(self):
+        sources = get_sources_for_region("western_nc")
+        assert "usgs_3dep" in sources
+        assert "nc" in sources
+
+    def test_western_md_sources(self):
+        sources = get_sources_for_region("western_md")
+        assert "usgs_3dep" in sources
+        assert "md" in sources
+
+    def test_south_louisiana_sources(self):
+        sources = get_sources_for_region("south_louisiana")
+        assert "usgs_3dep" in sources
+
+    def test_sierra_nevada_sources(self):
+        sources = get_sources_for_region("sierra_nevada")
+        assert "usgs_3dep" in sources
+
     def test_unknown_region_defaults_to_3dep(self):
         sources = get_sources_for_region("mars")
         assert sources == ["usgs_3dep"]
@@ -58,7 +78,12 @@ class TestRegionLoading:
         assert bounds[2] > -81  # east
 
     def test_load_all_regions(self):
-        region_names = ["western_pa", "eastern_pa", "west_virginia", "eastern_ohio", "upstate_ny"]
+        region_names = [
+            "western_pa", "eastern_pa", "west_virginia", "eastern_ohio", "upstate_ny",
+            "western_nc", "western_md", "western_ma",
+            "south_louisiana", "north_louisiana",
+            "northern_ca_lava", "sierra_nevada", "southern_ca_desert",
+        ]
         for name in region_names:
             bbox = load_region_bbox(name)
             assert bbox.is_valid, f"Invalid bbox for {name}"
@@ -113,7 +138,7 @@ class TestKnownSites:
             data = json.load(f)
 
         sites = data["validation_sites"]
-        assert len(sites) >= 20, f"Expected >=20 validation sites, got {len(sites)}"
+        assert len(sites) >= 35, f"Expected >=35 validation sites, got {len(sites)}"
 
         for site in sites:
             assert "name" in site
@@ -134,3 +159,8 @@ class TestKnownSites:
         assert "WV" in states
         assert "OH" in states
         assert "NY" in states
+        assert "NC" in states
+        assert "MD" in states
+        assert "MA" in states
+        assert "LA" in states
+        assert "CA" in states

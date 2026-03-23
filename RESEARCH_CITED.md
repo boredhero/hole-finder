@@ -100,9 +100,38 @@ Papers, datasets, and resources used to design and implement Hole Finder.
 - **Ohio DNR** — Ohio Karst Areas Map. [https://dam.assets.ohio.gov/image/upload/ohiodnr.gov/documents/geology/MiscMap_OhioKarst_2016.pdf](https://dam.assets.ohio.gov/image/upload/ohiodnr.gov/documents/geology/MiscMap_OhioKarst_2016.pdf)
 - **Ohio Cave Survey** — [https://ohiocavesurvey.org/](https://ohiocavesurvey.org/)
 
+### North Carolina
+- **NC Cave Survey** — 1,500+ documented caves across western NC Blue Ridge region.
+- **USGS Professional Paper 577** — Mica Deposits of the Blue Ridge in North Carolina (Lesure, F.G.). Spruce Pine Mining District, 700+ mica and feldspar mines.
+- **NC Wildlife Action Plan** — Caves and Mines Section 4.4.1. [https://www.ncwildlife.gov/caves-and-mines-section-441pdf/open](https://www.ncwildlife.gov/caves-and-mines-section-441pdf/open)
+
+### Maryland
+- **Maryland Geological Survey (MGS)** — Caves of Maryland (Educational Series Report 3). 53 documented caves. [https://www.mgs.md.gov/geology/caves/caves_in_maryland.html](https://www.mgs.md.gov/geology/caves/caves_in_maryland.html)
+- **MGS Karst Hydrogeology** — Hagerstown Valley karst survey, 2,100+ karst features. [https://www.mgs.md.gov/publications/report_pages/RI_73.html](https://www.mgs.md.gov/publications/report_pages/RI_73.html)
+- **MGS Sinkholes** — Sinkhole inventory for western Maryland. [https://www.mgs.md.gov/geology/geohazards/sinkholes_in_maryland.html](https://www.mgs.md.gov/geology/geohazards/sinkholes_in_maryland.html)
+
+### Massachusetts
+- **USGS Bulletin 744** — "The Lime Belt of Massachusetts." Berkshire County marble and limestone. [https://pubs.usgs.gov/bul/0744/report.pdf](https://pubs.usgs.gov/bul/0744/report.pdf)
+- **USGS MRDS** — 160+ mines in Massachusetts (iron, lead, copper, pyrite, mica). [https://mrdata.usgs.gov/mrds/](https://mrdata.usgs.gov/mrds/)
+
+### Louisiana
+- **Louisiana Geological Survey** — Subsidence monitoring and salt dome studies. [https://www.lsu.edu/lgs/](https://www.lsu.edu/lgs/)
+- **Bayou Corne Sinkhole** — 37-acre active salt dome collapse, Napoleonville Dome, Assumption Parish. Monitored via SORRENTO seismic array (17 stations).
+- **NASA JPL** — "That Sinking Feeling." InSAR precursory deformation studies of Gulf Coast subsidence. [https://www.jpl.nasa.gov/news/that-sinking-feeling/](https://www.jpl.nasa.gov/news/that-sinking-feeling/)
+- **EarthScope** — Monitoring microearthquakes of energy-storing salt domes in the Southeast US. [https://www.earthscope.org/news/monitoring-microearthquakes-of-energy-storing-salt-domes-in-the-southeast-us/](https://www.earthscope.org/news/monitoring-microearthquakes-of-energy-storing-salt-domes-in-the-southeast-us/)
+
+### California
+- **BLM Abandoned Mine Lands** — 25,000+ sites with 66,000+ features (portals, rock dumps) in California. [https://www.doi.gov/ocl/hearings/111/AbandonedMinesInCA_112309](https://www.doi.gov/ocl/hearings/111/AbandonedMinesInCA_112309)
+- **USGS MRDS** — 22,000+ California mine records. [https://mrdata.usgs.gov/mrds/](https://mrdata.usgs.gov/mrds/)
+- **California Geological Survey** — Historic Gold Mines map (13,500 mine locations). [https://www.conservation.ca.gov/cgs/minerals/gold](https://www.conservation.ca.gov/cgs/minerals/gold)
+- **CalGEM Mines Online** — California mine database portal. [https://maps.conservation.ca.gov/mol/index.html](https://maps.conservation.ca.gov/mol/index.html)
+- **NPS Lava Beds National Monument** — 700-800 lava tubes, 450 navigable caves. Cave Research Foundation surveys. [https://www.nps.gov/labe/](https://www.nps.gov/labe/)
+- **Cave Research Foundation** — Klamath Mountains Project (2018-present), lava tube surveys. [https://www.cave-research.org/](https://www.cave-research.org/)
+
 ### National
 - **USGS OFR 2014-1156** — "Karst in the United States: A Digital Map Compilation and Database." Shapefiles (269MB). [https://pubs.usgs.gov/of/2014/1156/](https://pubs.usgs.gov/of/2014/1156/)
 - **National Mine Map Repository (OSMRE)** — 275,000+ mine maps. [https://www.osmre.gov/programs/national-mine-map-repository](https://www.osmre.gov/programs/national-mine-map-repository)
+- **USGS MRDS** — Mineral Resources Data System, national mine/prospect database. [https://mrdata.usgs.gov/mrds/](https://mrdata.usgs.gov/mrds/)
 
 ---
 
@@ -114,7 +143,11 @@ Papers, datasets, and resources used to design and implement Hole Finder.
 - **WV GIS** — West Virginia elevation data. [http://data.wvgis.wvu.edu/elevation/](http://data.wvgis.wvu.edu/elevation/)
 - **NYS GIS** — New York State LiDAR. [https://gis.ny.gov/lidar](https://gis.ny.gov/lidar)
 - **OGRIP** — Ohio Geographically Referenced Information Program. [https://gis1.oit.ohio.gov/geodatadownload/](https://gis1.oit.ohio.gov/geodatadownload/)
-- **OpenTopography** — [https://opentopography.org/](https://opentopography.org/)
+- **NC OneMap** — North Carolina statewide LiDAR tile index. [https://www.nconemap.gov/](https://www.nconemap.gov/)
+- **MD iMAP** — Maryland enterprise GIS LiDAR portal. [https://imap.maryland.gov/pages/lidar-download](https://imap.maryland.gov/pages/lidar-download)
+- **MassGIS** — Massachusetts LiDAR terrain data. [https://www.mass.gov/info-details/massgis-data-lidar-terrain-data](https://www.mass.gov/info-details/massgis-data-lidar-terrain-data)
+- **LSU Atlas / LOSCO** — Louisiana statewide LiDAR (5m DEM). [https://atlas.ga.lsu.edu/](https://atlas.ga.lsu.edu/)
+- **OpenTopography** — NSF-funded open LiDAR access, extensive California coverage. [https://opentopography.org/](https://opentopography.org/)
 
 ---
 
@@ -136,3 +169,5 @@ Papers, datasets, and resources used to design and implement Hole Finder.
 
 - **Mid-Atlantic Karst Conservancy** — Harlansburg Cave, LiDAR guide. [https://www.karst.org/](https://www.karst.org/)
 - **National Speleological Society** — Tytoona Cave preserve. [https://caves.org/](https://caves.org/)
+- **NC Geological Survey** — Part of NC DEQ. [https://ncgs.state.nc.us/](https://ncgs.state.nc.us/)
+- **Cave Research Foundation** — Crystal Cave (Sequoia), Lava Beds surveys. [https://www.cave-research.org/](https://www.cave-research.org/)

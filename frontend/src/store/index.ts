@@ -64,7 +64,7 @@ export const useStore = create<AppState>((set) => ({
   setHoveredDetectionId: (id) => set({ hoveredDetectionId: id }),
 
   filters: {
-    featureTypes: ['sinkhole', 'cave_entrance', 'mine_portal', 'depression', 'collapse_pit', 'spring', 'unknown'],
+    featureTypes: ['sinkhole', 'cave_entrance', 'mine_portal', 'depression', 'collapse_pit', 'spring', 'lava_tube', 'salt_dome_collapse', 'unknown'],
     confidenceRange: [0.3, 1.0],
     validated: null,
   },

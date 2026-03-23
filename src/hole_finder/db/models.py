@@ -34,6 +34,8 @@ class DataSourceEnum(enum.StrEnum):
     WV = "wv"
     NY = "ny"
     OH = "oh"
+    NC = "nc"
+    MD = "md"
 
 
 class TileStatus(enum.StrEnum):
@@ -52,6 +54,8 @@ class FeatureType(enum.StrEnum):
     DEPRESSION = "depression"
     COLLAPSE_PIT = "collapse_pit"
     SPRING = "spring"
+    LAVA_TUBE = "lava_tube"
+    SALT_DOME_COLLAPSE = "salt_dome_collapse"
     UNKNOWN = "unknown"
 
 
@@ -77,6 +81,11 @@ class GroundTruthSource(enum.StrEnum):
     USGS_NY = "usgs_ny"
     USGS_NATIONAL = "usgs_national"
     OHIO_EPA = "ohio_epa"
+    NC_CAVE_SURVEY = "nc_cave_survey"
+    MD_KARST_SURVEY = "md_karst_survey"
+    MA_USGS_MINES = "ma_usgs_mines"
+    LA_SUBSIDENCE = "la_subsidence"
+    CA_BLM_AML = "ca_blm_aml"
 
 
 class ValidationVerdict(enum.StrEnum):

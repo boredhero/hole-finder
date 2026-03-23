@@ -1,0 +1,17 @@
+{
+  "type": "Feature",
+  "properties": {
+    "name": "Western North Carolina",
+    "description": "Blue Ridge karst, Spruce Pine mica mining, Piedmont gold mines"
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [[
+      [-84.3, 35.0],
+      [-81.5, 35.0],
+      [-81.5, 36.6],
+      [-84.3, 36.6],
+      [-84.3, 35.0]
+    ]]
+  }
+}
