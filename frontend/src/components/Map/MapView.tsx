@@ -13,8 +13,8 @@ import type { Basemap, Detection, GroundTruthSite } from '../../types';
 import { FEATURE_COLORS } from '../../types';
 
 const BASEMAP_STYLES: Record<Basemap, string> = {
-  satellite: 'https://api.maptiler.com/maps/hybrid/style.json?key=get_your_own_OpIi9ZULNHzrESv6T2vL',
-  topo: 'https://api.maptiler.com/maps/topo-v2/style.json?key=get_your_own_OpIi9ZULNHzrESv6T2vL',
+  satellite: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
+  topo: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
   dark: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
 };
 
