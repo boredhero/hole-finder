@@ -399,10 +399,14 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
                 crs_code = tile_result.crs or 32617
                 transformer = Transformer.from_crs(f"EPSG:{crs_code}", "EPSG:4326", always_xy=True)
                 good = [c for c in candidates
-                        if c.score > 0.4
-                        and c.morphometrics.get("area_m2", 0) > 50
+                        if c.score > 0.5
+                        and c.morphometrics.get("area_m2", 0) > 100
+                        and c.morphometrics.get("depth_m", 0) > 0.5
                         and (c.morphometrics.get("depth_m", 0)
                              or c.morphometrics.get("lrm_anomaly_m", 0)) < 100]
+                # Keep only top 50 per tile, sorted by score
+                good.sort(key=lambda c: c.score, reverse=True)
+                good = good[:50]
 
                 # Store detections
                 async def _store():

@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 
+    # Processing cache — set to false to skip .processed marker files (debug mode)
+    enable_processing_cache: bool = True
+
     @property
     def raw_dir(self) -> Path:
         return self.data_dir / "raw"

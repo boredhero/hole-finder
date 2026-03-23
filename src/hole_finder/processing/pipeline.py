@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from hole_finder.config import settings
 from hole_finder.processing.derivatives import compute_all_derivatives, fill_depressions
 from hole_finder.utils.logging import log
 from hole_finder.utils.perf import PipelineProfiler, get_profiler, new_profiler
@@ -108,7 +109,7 @@ class ProcessingPipeline:
         deriv_dir = tile_dir / "derivatives"
 
         marker = tile_dir / ".processed"
-        if marker.exists() and not force:
+        if marker.exists() and not force and settings.enable_processing_cache:
             return self._load_existing(tile_dir, deriv_dir)
 
         profiler = new_profiler(f"process_point_cloud:{stem}")
@@ -137,7 +138,7 @@ class ProcessingPipeline:
         deriv_dir = tile_dir / "derivatives"
 
         marker = tile_dir / ".processed"
-        if marker.exists() and not force:
+        if marker.exists() and not force and settings.enable_processing_cache:
             return self._load_existing(tile_dir, deriv_dir)
 
         profiler = new_profiler(f"process_dem:{stem}")
