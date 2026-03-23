@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hole Finder — Server Offline</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .container {
+    text-align: center;
+    max-width: 420px;
+    padding: 2rem;
+  }
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: #f8fafc;
+  }
+  .subtitle {
+    color: #94a3b8;
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
+    line-height: 1.5;
+  }
+  #status {
+    padding: 1rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+  .status-offline { background: #1e293b; border: 1px solid #334155; color: #94a3b8; }
+  .status-waking { background: #172554; border: 1px solid #1e40af; color: #93c5fd; }
+  .status-online { background: #052e16; border: 1px solid #166534; color: #86efac; }
+  .status-failed { background: #450a0a; border: 1px solid #991b1b; color: #fca5a5; }
+  button {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 0.75rem 2rem;
+    border-radius: 0.5rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+    width: 100%;
+  }
+  button:hover:not(:disabled) { background: #1d4ed8; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 0.5rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .progress {
+    margin-top: 1rem;
+    font-size: 0.8rem;
+    color: #64748b;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Hole Finder</h1>
+  <p class="subtitle">The processing server is currently offline.</p>
+  <div id="status" class="status-offline">Server is not responding.</div>
+  <button id="btn" onclick="wake()">Try to Reconnect</button>
+  <div id="progress" class="progress"></div>
+</div>
+<script>
+const MAX_WAIT = 300; // 5 minutes
+let polling = false;
+let elapsed = 0;
+
+async function wake() {
+  const btn = document.getElementById('btn');
+  const status = document.getElementById('status');
+  const progress = document.getElementById('progress');
+
+  btn.disabled = true;
+  status.className = 'status-waking';
+  status.innerHTML = '<span class="spinner"></span> Sending wake signal...';
+
+  try {
+    const res = await fetch('/api/wake', { method: 'POST' });
+    const data = await res.json();
+
+    if (res.status === 429) {
+      status.innerHTML = '<span class="spinner"></span> ' + data.message;
+    } else if (res.ok) {
+      status.innerHTML = '<span class="spinner"></span> Wake signal sent. Waiting for server to boot...';
+    } else {
+      status.className = 'status-failed';
+      status.textContent = 'Failed: ' + (data.error || 'Unknown error');
+      btn.disabled = false;
+      return;
+    }
+  } catch (e) {
+    status.className = 'status-failed';
+    status.textContent = 'Could not reach gateway. Check your connection.';
+    btn.disabled = false;
+    return;
+  }
+
+  // Poll until backend comes up or timeout
+  polling = true;
+  elapsed = 0;
+  pollBackend(status, progress, btn);
+}
+
+async function pollBackend(status, progress, btn) {
+  if (elapsed >= MAX_WAIT) {
+    status.className = 'status-failed';
+    status.textContent = 'Server did not come online within 5 minutes.';
+    progress.textContent = '';
+    btn.disabled = false;
+    btn.textContent = 'Try Again';
+    return;
+  }
+
+  progress.textContent = formatTime(elapsed) + ' / 5:00';
+
+  try {
+    const res = await fetch('/api/health', { signal: AbortSignal.timeout(3000) });
+    if (res.ok) {
+      status.className = 'status-online';
+      status.textContent = 'Server is online! Redirecting...';
+      progress.textContent = '';
+      setTimeout(() => window.location.reload(), 1500);
+      return;
+    }
+  } catch (e) {
+    // Still down, keep polling
+  }
+
+  elapsed += 5;
+  status.innerHTML = '<span class="spinner"></span> Waiting for server to boot...';
+  setTimeout(() => pollBackend(status, progress, btn), 5000);
+}
+
+function formatTime(s) {
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+</script>
+</body>
+</html>
