@@ -279,8 +279,20 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
             ctx["tiles_found"] = len(tiles)
 
         if not tiles:
-            _update_job("COMPLETED", 100, summary={"tiles": 0, "detections": 0})
+            _update_job("FAILED", 0, "No LiDAR data available for this area. Try a different location — coverage varies by region.", summary={"tiles": 0, "detections": 0})
             return
+
+        # Clear stale detections in scan area now that we know tiles exist
+        if bbox_geojson:
+            from shapely.geometry import shape as _shape
+            _bbox = _shape(bbox_geojson)
+            b = _bbox.bounds
+            async def _clear_stale():
+                async with _async_session() as session:
+                    from sqlalchemy import text
+                    await session.execute(text("DELETE FROM detections WHERE ST_Within(geometry, ST_MakeEnvelope(:w, :s, :e, :n, 4326))"), {"w": b[0], "s": b[1], "e": b[2], "n": b[3]})
+                    await session.commit()
+            asyncio.run(_clear_stale())
 
         source_name = "USGS 3DEP" if bbox_geojson else region_name or "unknown"
         _update_job("RUNNING", 10, f"Downloading {len(tiles)} tiles", stage="downloading",
