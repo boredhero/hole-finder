@@ -40,7 +40,7 @@ services:
     command: redis-server --maxmemory 2gb --maxmemory-policy allkeys-lru
 
   api:
-    image: ghcr.io/boredhero/anomalies-browser:latest
+    image: ghcr.io/boredhero/hole-finder:latest
     container_name: hole-finder-api
     restart: unless-stopped
     ports:
@@ -68,7 +68,7 @@ services:
       - "autoheal=true"
 
   celery-worker:
-    image: ghcr.io/boredhero/anomalies-browser:latest
+    image: ghcr.io/boredhero/hole-finder:latest
     container_name: hole-finder-worker
     restart: unless-stopped
     command: ["uv", "run", "celery", "-A", "hole_finder.workers.celery_app", "worker",
@@ -89,7 +89,7 @@ services:
         condition: service_started
 
   celery-gpu:
-    image: ghcr.io/boredhero/anomalies-browser:latest
+    image: ghcr.io/boredhero/hole-finder:latest
     container_name: hole-finder-gpu-worker
     restart: unless-stopped
     command: ["uv", "run", "celery", "-A", "hole_finder.workers.celery_app", "worker",

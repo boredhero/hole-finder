@@ -75,7 +75,7 @@ jobs:
           DEPLOY_SHA: ${{ github.sha }}
         script: |
           set -e
-          IMAGE="ghcr.io/boredhero/anomalies-browser"
+          IMAGE="ghcr.io/boredhero/hole-finder"
 
           ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=no noah@192.168.1.111 'mkdir -p ~/anomalies-browser/configs/passes ~/anomalies-browser/configs/regions'
 
