@@ -105,7 +105,7 @@ export default function SwipeCard({
               {d.depth_m != null && (
                 <div className="bg-slate-800 rounded p-2">
                   <div className="text-slate-500 uppercase">Depth</div>
-                  <div className="text-slate-100 font-mono">{d.depth_m.toFixed(1)} m</div>
+                  <div className="text-slate-100 font-mono">{d.depth_m.toFixed(1)} m <span className="text-slate-400">({(d.depth_m * 3.281).toFixed(1)} ft)</span></div>
                 </div>
               )}
               {d.area_m2 != null && (
