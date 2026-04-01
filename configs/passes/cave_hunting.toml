@@ -36,4 +36,4 @@ min_area_pixels = 10
 min_depth_m = 0.5
 min_area_m2 = 100
 max_area_m2 = 4000
-min_circularity = 0.2
+min_circularity = 0.3

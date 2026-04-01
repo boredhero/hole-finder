@@ -25,4 +25,4 @@ min_area_pixels = 10
 [passes.morphometric_filter]
 min_depth_m = 0.3
 max_area_m2 = 200000
-min_circularity = 0.1
+min_circularity = 0.2
