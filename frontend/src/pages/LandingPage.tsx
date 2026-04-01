@@ -240,8 +240,11 @@ export default function LandingPage() {
   // MapView stays mounted across ALL of these to keep the WebGL context alive
   // and prevent DOMExceptions from stale tile-load callbacks on context destruction.
   const isMapPhase = phase === 'processing' || phase === 'results' || phase === 'tour' || phase === 'explore';
+  const filters = useStore((s) => s.filters);
+
   if (isMapPhase) {
-    const tourDetection = tourDetections[tourIndex];
+    const filteredTour = tourDetections.filter((d) => d.confidence >= filters.confidenceRange[0]);
+    const tourDetection = filteredTour[tourIndex];
     return (
       <div className="relative h-full w-full">
         <div className="absolute inset-0">
@@ -287,7 +290,7 @@ export default function LandingPage() {
                 detection={tourDetection}
                 userLocation={userLocation}
                 currentIndex={tourIndex}
-                totalCount={tourDetections.length}
+                totalCount={filteredTour.length}
                 direction={swipeDirection}
                 onNext={handleTourNext}
                 onPrev={handleTourPrev}
