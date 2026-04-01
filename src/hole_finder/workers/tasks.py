@@ -266,12 +266,24 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
                 tiles = asyncio.run(discover_region(region_name))
             elif bbox_geojson:
                 from shapely.geometry import shape
+                from hole_finder.ingest.manager import get_sources_for_bbox
                 bbox = shape(bbox_geojson)
-                source = get_source("usgs_3dep")
                 tiles = []
+                bbox_source_used = "usgs_3dep"
                 async def _discover():
-                    async for t in source.discover_tiles(bbox):
-                        tiles.append(t)
+                    nonlocal bbox_source_used
+                    sources_to_try = get_sources_for_bbox(bbox)
+                    for src_name in sources_to_try:
+                        src = get_source(src_name)
+                        try:
+                            async for t in src.discover_tiles(bbox):
+                                tiles.append(t)
+                        except Exception as e:
+                            log.warning("bbox_source_failed", source=src_name, error=str(e))
+                        if tiles:
+                            bbox_source_used = src_name
+                            log.info("bbox_source_resolved", source=src_name, tiles=len(tiles))
+                            break
                 asyncio.run(_discover())
             else:
                 _update_job("FAILED", 0, "No region or bbox specified")
@@ -294,7 +306,7 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
                     await session.commit()
             asyncio.run(_clear_stale())
 
-        source_name = "USGS 3DEP" if bbox_geojson else region_name or "unknown"
+        source_name = bbox_source_used if bbox_geojson else region_name or "unknown"
         _update_job("RUNNING", 10, f"Downloading {len(tiles)} tiles", stage="downloading",
                      summary={"stage": "downloading", "source": source_name})
 
@@ -310,8 +322,9 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
         tile_limit = min(len(tiles), config_limit)
         downloaded = []
         with profiler.stage("tile_downloads", tile_limit=tile_limit) as ctx:
-            source = get_source("usgs_3dep")
-            dest = settings.raw_dir / "usgs_3dep"
+            dl_source_name = bbox_source_used if bbox_geojson else "usgs_3dep"
+            source = get_source(dl_source_name)
+            dest = settings.raw_dir / dl_source_name
 
             async def _download_all():
                 import asyncio as aio

@@ -54,6 +54,30 @@ def get_sources_for_region(region_name: str) -> list[str]:
     return region_sources.get(region_name, ["usgs_3dep"])
 
 
+def get_sources_for_bbox(bbox: Polygon) -> list[str]:
+    """Determine which data sources cover a bbox by checking region overlaps.
+    Always includes usgs_3dep first, then appends any state-specific sources
+    whose region polygon intersects the given bbox."""
+    sources = ["usgs_3dep"]
+    seen = {"usgs_3dep"}
+    region_source_map = {
+        "western_pa": ["pasda"], "eastern_pa": ["pasda"],
+        "west_virginia": ["wv"], "eastern_ohio": ["oh"],
+        "upstate_ny": ["ny"], "western_nc": ["nc"], "western_md": ["md"],
+    }
+    for region_name, extra_sources in region_source_map.items():
+        try:
+            region_poly = load_region_bbox(region_name)
+            if region_poly.intersects(bbox):
+                for s in extra_sources:
+                    if s not in seen:
+                        sources.append(s)
+                        seen.add(s)
+        except FileNotFoundError:
+            continue
+    return sources
+
+
 def load_region_bbox(region_name: str) -> Polygon:
     """Load a region's bounding polygon from the configs/regions/ GeoJSON."""
     import json
