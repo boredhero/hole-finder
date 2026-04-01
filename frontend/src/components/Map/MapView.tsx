@@ -378,9 +378,6 @@ const DEFAULT_VIEW = { longitude: -79.71, latitude: 39.80, zoom: 13, pitch: 45, 
 export default function MapView() {
   const basemap = useStore((s) => s.basemap);
   const showHeatmap = useStore((s) => s.showHeatmap);
-  const show3DTerrain = useStore((s) => s.show3DTerrain);
-  const terrainReady = useStore((s) => s.terrainReady);
-  const terrainExaggeration = useStore((s) => s.terrainExaggeration);
   const setBbox = useStore((s) => s.setBbox);
   const drawingAOI = useStore((s) => s.drawingAOI);
   const setDrawnAOI = useStore((s) => s.setDrawnAOI);
