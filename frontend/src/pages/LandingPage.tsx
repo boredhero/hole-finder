@@ -280,22 +280,6 @@ export default function LandingPage() {
           <>
             <TopBar />
             <SettingsPanel />
-          </>
-        )}
-        {phase === 'tour' && tourDetection && (
-          <SwipeCard
-            detection={tourDetection}
-            userLocation={userLocation}
-            currentIndex={tourIndex}
-            totalCount={tourDetections.length}
-            direction={swipeDirection}
-            onNext={handleTourNext}
-            onPrev={handleTourPrev}
-            onExit={handleTourExit}
-          />
-        )}
-        {phase === 'explore' && (
-          <>
             <ExploreSearchButton
               onResults={(dets) => {
                 setTourDetections(dets);
@@ -315,7 +299,7 @@ export default function LandingPage() {
                 direction={swipeDirection}
                 onNext={handleTourNext}
                 onPrev={handleTourPrev}
-                onExit={handleSwiperDismiss}
+                onExit={phase === 'tour' ? handleTourExit : handleSwiperDismiss}
               />
             )}
           </>
@@ -417,12 +401,21 @@ function ExploreSearchButton({ onResults }: { onResults: (dets: Detection[]) => 
 
   if (!searchStale || !bbox) return null;
 
+  // Cap bbox to ~50km span to prevent lag on very zoomed-out views
+  const clampBbox = (b: [number, number, number, number]): [number, number, number, number] => {
+    const maxSpan = 0.5; // ~50km at mid-latitudes
+    const lonCenter = (b[0] + b[2]) / 2, latCenter = (b[1] + b[3]) / 2;
+    const lonSpan = Math.min(b[2] - b[0], maxSpan), latSpan = Math.min(b[3] - b[1], maxSpan);
+    return [lonCenter - lonSpan / 2, latCenter - latSpan / 2, lonCenter + lonSpan / 2, latCenter + latSpan / 2];
+  };
+
   const handleSearch = async () => {
     setLoading(true);
     setSearchStale(false);
+    const clamped = clampBbox(bbox);
     try {
       const data = await getDetections({
-        west: bbox[0], south: bbox[1], east: bbox[2], north: bbox[3],
+        west: clamped[0], south: clamped[1], east: clamped[2], north: clamped[3],
         min_confidence: 0.5,
         limit: 50,
       });
