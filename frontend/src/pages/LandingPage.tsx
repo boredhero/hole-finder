@@ -146,9 +146,10 @@ export default function LandingPage() {
       return;
     }
 
-    const r = 5 / 111.32;
-    const west = center.lon - r, south = center.lat - r;
-    const east = center.lon + r, north = center.lat + r;
+    const rLat = 10 / 111.32;
+    const rLon = 10 / (111.32 * Math.cos(center.lat * Math.PI / 180));
+    const west = center.lon - rLon, south = center.lat - rLat;
+    const east = center.lon + rLon, north = center.lat + rLat;
 
     // Warm terrain cache BEFORE loading the map — prevents DOMExceptions
     // from uncached terrain tiles. Runs in parallel with detection fetch.
