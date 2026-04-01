@@ -12,6 +12,14 @@ import DrawControl from './DrawControl';
 import type { Basemap, Detection } from '../../types';
 import { FEATURE_COLORS } from '../../types';
 
+const TERRAIN_SOURCE = {
+  type: 'raster-dem' as const,
+  tiles: ['/api/raster/terrain/{z}/{x}/{y}.png'],
+  tileSize: 256,
+  encoding: 'terrarium' as const,
+  maxzoom: 15,
+};
+
 const SATELLITE_STYLE = {
   version: 8 as const,
   sources: {
@@ -29,6 +37,7 @@ const SATELLITE_STYLE = {
       maxzoom: 18,
       attribution: 'CARTO',
     },
+    'terrain-source': TERRAIN_SOURCE,
   },
   layers: [
     {
@@ -61,6 +70,7 @@ const LIDAR_STYLE = {
       minzoom: 10,
       maxzoom: 16,
     },
+    'terrain-source': TERRAIN_SOURCE,
   },
   layers: [
     {
@@ -318,15 +328,11 @@ function MVTLayerManager() {
 
     // Re-add layers after basemap change destroys them
     map.on('style.load', () => {
-      // Terrain source also needs re-adding
+      // For external styles (topo/dark), terrain source isn't baked in — add it
       if (!map.getSource('terrain-source')) {
-        map.addSource('terrain-source', {
-          type: 'raster-dem',
-          tiles: ['/api/raster/terrain/{z}/{x}/{y}.png'],
-          tileSize: 256,
-          encoding: 'terrarium',
-          maxzoom: 15,
-        });
+        try {
+          map.addSource('terrain-source', TERRAIN_SOURCE);
+        } catch { /* source may already exist during rapid style switches */ }
       }
       addMVTLayers(map);
     });
@@ -397,16 +403,6 @@ export default function MapView() {
         const map = evt.target;
         const bounds = map.getBounds();
         setBbox([bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]);
-
-        if (!map.getSource('terrain-source')) {
-          map.addSource('terrain-source', {
-            type: 'raster-dem',
-            tiles: ['/api/raster/terrain/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            encoding: 'terrarium',
-            maxzoom: 15,
-          });
-        }
       }}
       terrain={show3DTerrain ? { source: 'terrain-source', exaggeration: terrainExaggeration } : undefined}
     >
