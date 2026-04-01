@@ -162,6 +162,7 @@ function MVTLayerManager() {
   const setSidebarOpen = useStore((s) => s.setSidebarOpen);
 
   const addMVTLayers = useCallback((map: any) => {
+    console.log('[MVT] addMVTLayers called, style loaded:', map.isStyleLoaded(), 'existing sources:', Object.keys(map.getStyle()?.sources || {}));
     // Detection tiles
     if (!map.getSource('detections-mvt')) {
       map.addSource('detections-mvt', {
@@ -170,6 +171,7 @@ function MVTLayerManager() {
         minzoom: 6,
         maxzoom: 16,
       });
+      console.log('[MVT] Added detections-mvt source');
     }
     if (!map.getLayer('detections-circles')) {
       map.addLayer({
@@ -208,7 +210,6 @@ function MVTLayerManager() {
           ],
           'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 8, 1, 14, 2, 18, 3],
           'circle-stroke-color': 'rgba(255,255,255,0.7)',
-          // Opacity scales with confidence — low confidence = faint, high = bold
           'circle-opacity': [
             'interpolate', ['linear'], ['get', 'confidence'],
             0.3, 0.35,
@@ -247,6 +248,15 @@ function MVTLayerManager() {
       });
     }
 
+    console.log('[MVT] Layers added. Sources:', Object.keys(map.getStyle()?.sources || {}), 'Layers:', map.getStyle()?.layers?.map((l: any) => l.id).filter((id: string) => id.includes('detection') || id.includes('outline') || id.includes('ground')));
+    // Log when MVT tiles actually load data
+    map.on('sourcedata', (e: any) => {
+      if (e.sourceId === 'detections-mvt' && e.isSourceLoaded) {
+        const features = map.querySourceFeatures('detections-mvt', { sourceLayer: 'detections' });
+        const outlines = map.querySourceFeatures('detections-mvt', { sourceLayer: 'outlines' });
+        console.log('[MVT] detections-mvt loaded:', features.length, 'detection features,', outlines.length, 'outline features');
+      }
+    });
     // Ground truth tiles
     if (!map.getSource('ground-truth-mvt')) {
       map.addSource('ground-truth-mvt', {
