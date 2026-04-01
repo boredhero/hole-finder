@@ -4,7 +4,8 @@ Vectorized: uses scipy.ndimage bulk operations across all labels at once.
 """
 
 import numpy as np
-from shapely.geometry import Point
+from rasterio.features import shapes as rasterio_shapes
+from shapely.geometry import Point, shape
 
 from hole_finder.detection.array_backend import label, region_stats
 from hole_finder.detection.base import Candidate, DetectionPass, FeatureType, PassInput
@@ -53,6 +54,15 @@ class CurvaturePass(DetectionPass):
 
         valid = areas_px >= min_area_pixels
 
+        valid_set = set(np.flatnonzero(valid).tolist())
+        valid_labels = set(idx + 1 for idx in valid_set)
+        masked_labeled = np.where(np.isin(labeled, list(valid_labels)), labeled, 0).astype(np.int32)
+
+        outlines: dict[int, object] = {}
+        for geom_dict, value in rasterio_shapes(masked_labeled, mask=(masked_labeled > 0), transform=input_data.transform):
+            arr_idx = int(value) - 1
+            outlines[arr_idx] = shape(geom_dict)
+
         candidates = []
         for idx in np.flatnonzero(valid):
             cy, cx = centroids[idx]
@@ -64,6 +74,7 @@ class CurvaturePass(DetectionPass):
             candidates.append(
                 Candidate(
                     geometry=Point(geo_x, geo_y),
+                    outline=outlines.get(idx),
                     score=strength,
                     feature_type=FeatureType.DEPRESSION,
                     morphometrics={"min_curvature": min_curv_val, "area_m2": area_m2},

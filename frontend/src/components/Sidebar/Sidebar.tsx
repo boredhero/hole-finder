@@ -43,7 +43,7 @@ export default function Sidebar() {
       `}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-slate-700 flex-shrink-0">
-          <div>
+          <div className="text-center">
             <h2 className="text-lg font-bold text-white tracking-wide">HOLE FINDER</h2>
             <VersionTag />
           </div>
@@ -123,5 +123,5 @@ function VersionTag() {
     staleTime: 300_000,
   });
   if (!data) return null;
-  return <span className="text-sm text-slate-500">v{data.version}</span>;
+  return <span className="text-base text-slate-500">v{data.version}</span>;
 }
