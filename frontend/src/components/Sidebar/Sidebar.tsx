@@ -43,7 +43,7 @@ export default function Sidebar() {
       `}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-slate-700 flex-shrink-0">
-          <div className="text-center">
+          <div className="flex items-baseline gap-3">
             <h2 className="text-lg font-bold text-white tracking-wide">HOLE FINDER</h2>
             <VersionTag />
           </div>
