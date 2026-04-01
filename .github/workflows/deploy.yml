@@ -18,6 +18,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Inject version from info.yml
+        run: |
+          VERSION=$(grep '^version:' info.yml | awk '{print $2}')
+          sed -i "s/__HOLEFINDER_VERSION__/$VERSION/" pyproject.toml
+          echo "Injected version $VERSION into pyproject.toml"
+
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
@@ -63,23 +69,38 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           command_timeout: 5m
-          script: |
-            set -e
+          envs: GHCR_TOKEN,DEPLOY_SHA
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          DEPLOY_SHA: ${{ github.sha }}
+        script: |
+          set -e
+          IMAGE="ghcr.io/boredhero/hole-finder"
 
-            ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=no noah@192.168.1.111 'mkdir -p ~/anomalies-browser/configs/passes ~/anomalies-browser/configs/regions'
+          ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=no noah@192.168.1.111 'mkdir -p ~/anomalies-browser/configs/passes ~/anomalies-browser/configs/regions'
 
-            scp -o StrictHostKeyChecking=no /tmp/anomalies-deploy/docker-compose.prod.yml noah@192.168.1.111:~/anomalies-browser/docker-compose.yml
-            scp -r -o StrictHostKeyChecking=no /tmp/anomalies-deploy/configs/* noah@192.168.1.111:~/anomalies-browser/configs/
+          scp -o StrictHostKeyChecking=no /tmp/anomalies-deploy/docker-compose.prod.yml noah@192.168.1.111:~/anomalies-browser/docker-compose.yml
+          scp -r -o StrictHostKeyChecking=no /tmp/anomalies-deploy/configs/* noah@192.168.1.111:~/anomalies-browser/configs/
 
-            ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=no noah@192.168.1.111 "echo '${{ secrets.GHCR_TOKEN }}' | docker login ghcr.io -u boredhero --password-stdin && docker pull ghcr.io/boredhero/anomalies-browser:latest && cd ~/anomalies-browser && docker compose up -d --force-recreate --remove-orphans && docker compose ps"
+          # Login, pull by SHA tag (guarantees we get THIS build, not a stale :latest),
+          # then retag as :latest so docker-compose.yml can reference it
+          OLD_ID=$(ssh -o StrictHostKeyChecking=no noah@192.168.1.111 "docker images ${IMAGE}:latest -q" 2>/dev/null || echo "none")
+          ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=no noah@192.168.1.111 "echo '${GHCR_TOKEN}' | docker login ghcr.io -u boredhero --password-stdin"
+          ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=no noah@192.168.1.111 "docker pull ${IMAGE}:${DEPLOY_SHA}"
+          ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=no noah@192.168.1.111 "docker tag ${IMAGE}:${DEPLOY_SHA} ${IMAGE}:latest"
+          NEW_ID=$(ssh -o StrictHostKeyChecking=no noah@192.168.1.111 "docker images ${IMAGE}:latest -q")
+          echo "Image: old=${OLD_ID} new=${NEW_ID} sha=${DEPLOY_SHA}"
+          if [ "${OLD_ID}" = "${NEW_ID}" ]; then echo "WARNING: Image unchanged after pull"; fi
 
-            # nginx config managed by certbot — don't overwrite
-            # Only reload if config exists and is valid
-            sudo nginx -t && sudo systemctl reload nginx || true
+          ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=no noah@192.168.1.111 "cd ~/anomalies-browser && docker compose up -d --force-recreate --remove-orphans && docker compose ps"
 
-            for i in 1 2 3 4 5 6; do
-              curl -sf http://192.168.1.111:9747/api/health && echo " [deploy OK]" && break
-              sleep 10
-            done
+          # nginx config managed by certbot — don't overwrite
+          # Only reload if config exists and is valid
+          sudo nginx -t && sudo systemctl reload nginx || true
 
-            rm -rf /tmp/anomalies-deploy
+          for i in 1 2 3 4 5 6; do
+            curl -sf http://192.168.1.111:9747/api/health && echo " [deploy OK]" && break
+            sleep 10
+          done
+
+          rm -rf /tmp/anomalies-deploy
