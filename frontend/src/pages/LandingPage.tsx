@@ -170,6 +170,13 @@ export default function LandingPage() {
         lat: f.geometry.coordinates[1],
         ...f.properties,
       }));
+      // Sort: non-depressions first (caves, mines, sinkholes are more interesting), then by confidence
+      dets.sort((a, b) => {
+        const aIsDepression = a.feature_type === 'depression' ? 1 : 0;
+        const bIsDepression = b.feature_type === 'depression' ? 1 : 0;
+        if (aIsDepression !== bIsDepression) return aIsDepression - bIsDepression;
+        return b.confidence - a.confidence;
+      });
       console.log('[HoleFinder] Fetched', dets.length, 'detections for tour');
       setTourDetections(dets);
       setTourIndex(0);
@@ -425,6 +432,12 @@ function ExploreSearchButton({ onResults }: { onResults: (dets: Detection[]) => 
         lat: f.geometry.coordinates[1],
         ...f.properties,
       }));
+      dets.sort((a, b) => {
+        const aIsDepression = a.feature_type === 'depression' ? 1 : 0;
+        const bIsDepression = b.feature_type === 'depression' ? 1 : 0;
+        if (aIsDepression !== bIsDepression) return aIsDepression - bIsDepression;
+        return b.confidence - a.confidence;
+      });
       console.log('[HoleFinder] Search found', dets.length, 'detections');
       onResults(dets);
     } catch (err) {
