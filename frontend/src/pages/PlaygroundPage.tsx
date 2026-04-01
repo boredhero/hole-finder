@@ -1,9 +1,13 @@
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import MapView from '../components/Map/MapView';
 import Sidebar from '../components/Sidebar/Sidebar';
+import { useStore } from '../store';
 import { ArrowLeft } from 'lucide-react';
 
 export default function PlaygroundPage() {
+  const setTerrainReady = useStore((s) => s.setTerrainReady);
+  useEffect(() => { setTerrainReady(true); }, [setTerrainReady]);
   return (
     <div className="relative h-full w-full">
       <div className="absolute inset-0">

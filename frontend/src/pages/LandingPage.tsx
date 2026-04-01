@@ -11,7 +11,7 @@ import { useJobProgress } from '../hooks/useJobProgress';
 import { useStore } from '../store';
 import { geocodeZip, getDetections, startConsumerScan, warmTerrainCache } from '../api/client';
 import { geometryToBbox, formatRegionName } from '../utils';
-import { Locate, Map as MapIcon, Search, ArrowLeft, Settings2, Loader2, AlertCircle } from 'lucide-react';
+import { Locate, Map as MapIcon, Search, ArrowLeft, Settings2, Loader2, AlertCircle, MapPin } from 'lucide-react';
 import type { Detection } from '../types';
 
 type Phase = 'splash' | 'regionPicker' | 'processing' | 'results' | 'tour' | 'explore';
@@ -23,11 +23,13 @@ export default function LandingPage() {
   const [zipCode, setZipCode] = useState('');
   const [zipLoading, setZipLoading] = useState(false);
   const [zipError, setZipError] = useState<string | null>(null);
+  const [showZipInput, setShowZipInput] = useState(false);
   const [swipeDirection, setSwipeDirection] = useState(1);
 
   const setTargetViewState = useStore((s) => s.setTargetViewState);
   const setUserLocation = useStore((s) => s.setUserLocation);
   const setSearchStale = useStore((s) => s.setSearchStale);
+  const setTerrainReady = useStore((s) => s.setTerrainReady);
   const userLocation = useStore((s) => s.userLocation);
 
   const activeJobId = useStore((s) => s.activeJobId);
@@ -80,6 +82,7 @@ export default function LandingPage() {
           3: "Location request timed out. Try entering your zip code instead.",
         };
         setGeoError(messages[err.code] ?? `Geolocation error (code ${err.code}): ${err.message}`);
+        setShowZipInput(true);
       },
       { timeout: 10000 },
     );
@@ -109,6 +112,7 @@ export default function LandingPage() {
     const lonSpan = bbox[2] - bbox[0];
     const zoom = lonSpan > 3 ? 7 : lonSpan > 1 ? 9 : 11;
     setTargetViewState({ longitude: centerLon, latitude: centerLat, zoom, pitch: 45, bearing: -15 });
+    setTerrainReady(true);
     setSearchStale(true);
     setPhase('explore');
   }, [setTargetViewState, setSearchStale]);
@@ -149,8 +153,8 @@ export default function LandingPage() {
     // Warm terrain cache BEFORE loading the map — prevents DOMExceptions
     // from uncached terrain tiles. Runs in parallel with detection fetch.
     const warmPromise = warmTerrainCache(west, south, east, north)
-      .then((res) => console.log('[HoleFinder] Terrain cache warmed:', res))
-      .catch((err) => console.warn('[HoleFinder] Terrain warm failed (non-fatal):', err));
+      .then((res) => { console.log('[HoleFinder] Terrain cache warmed:', res); setTerrainReady(true); })
+      .catch((err) => { console.warn('[HoleFinder] Terrain warm failed (non-fatal):', err); setTerrainReady(true); });
 
     const detectPromise = getDetections({
       west, south, east, north,
@@ -348,15 +352,13 @@ export default function LandingPage() {
             {geoLoading ? 'Getting location...' : 'Find a Hole Near Me'}
           </button>
           <button
-            onClick={() => setPhase('regionPicker')}
+            onClick={() => setShowZipInput(!showZipInput)}
             className="flex items-center justify-center gap-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-4 px-8 rounded text-lg transition-colors"
           >
-            <MapIcon size={22} />
-            Pick a Region
+            <MapPin size={22} />
+            Enter Zip Code
           </button>
-
-          {/* Zip code fallback — appears after geolocation error */}
-          {geoError && (
+          {showZipInput && (
             <div className="flex items-stretch gap-4">
               <input
                 type="text"
@@ -366,6 +368,7 @@ export default function LandingPage() {
                 value={zipCode}
                 onChange={(e) => { setZipCode(e.target.value.replace(/\D/g, '')); setZipError(null); }}
                 onKeyDown={(e) => e.key === 'Enter' && handleZipSubmit()}
+                autoFocus
                 className="flex-1 min-w-0 bg-slate-800 border-2 border-slate-600 text-white text-xl py-4 px-6 rounded focus:outline-none focus:border-cherry-500 transition-colors placeholder:text-slate-500"
               />
               <button
@@ -380,6 +383,13 @@ export default function LandingPage() {
           {zipError && (
             <p className="text-red-400 text-base">{zipError}</p>
           )}
+          <button
+            onClick={() => setPhase('regionPicker')}
+            className="flex items-center justify-center gap-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-4 px-8 rounded text-lg transition-colors"
+          >
+            <MapIcon size={22} />
+            Pick a Region
+          </button>
         </div>
 
         <p className="text-sm text-slate-600 mt-10">
