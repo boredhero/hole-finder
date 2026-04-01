@@ -23,6 +23,8 @@ interface AppState {
   setTerrainReady: (v: boolean) => void;
   terrainExaggeration: number;
   setTerrainExaggeration: (v: number) => void;
+  showTileCoverage: boolean;
+  toggleTileCoverage: () => void;
 
   // Map viewport persistence (survives route transitions)
   viewState: ViewState | null;
@@ -97,6 +99,8 @@ export const useStore = create<AppState>((set) => ({
   setTerrainReady: (v) => set({ terrainReady: v }),
   terrainExaggeration: 1.5,
   setTerrainExaggeration: (v) => set({ terrainExaggeration: v }),
+  showTileCoverage: false,
+  toggleTileCoverage: () => set((s) => ({ showTileCoverage: !s.showTileCoverage })),
 
   viewState: null,
   setViewState: (v) => set({ viewState: v }),

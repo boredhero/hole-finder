@@ -23,6 +23,8 @@ export default function FilterPanel() {
   const toggle3DTerrain = useStore((s) => s.toggle3DTerrain);
   const terrainExaggeration = useStore((s) => s.terrainExaggeration);
   const setTerrainExaggeration = useStore((s) => s.setTerrainExaggeration);
+  const showTileCoverage = useStore((s) => s.showTileCoverage);
+  const toggleTileCoverage = useStore((s) => s.toggleTileCoverage);
 
   const toggleType = (ft: FeatureType) => {
     const types = filters.featureTypes.includes(ft)
@@ -88,6 +90,10 @@ export default function FilterPanel() {
           <label className="flex items-center gap-3 cursor-pointer text-sm py-1">
             <input type="checkbox" checked={show3DTerrain} onChange={toggle3DTerrain} className="rounded w-4 h-4" />
             <span className="text-slate-200">3D Terrain</span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer text-sm py-1">
+            <input type="checkbox" checked={showTileCoverage} onChange={toggleTileCoverage} className="rounded w-4 h-4" />
+            <span className="text-slate-200">Tile Coverage</span>
           </label>
         </div>
         {show3DTerrain && (

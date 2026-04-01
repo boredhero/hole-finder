@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import Map, { NavigationControl, ScaleControl, GeolocateControl, useMap } from 'react-map-gl/maplibre';
 import { MapboxOverlay } from '@deck.gl/mapbox';
 import { HeatmapLayer } from '@deck.gl/aggregation-layers';
@@ -7,7 +7,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { useStore } from '../../store';
 import { useDetections } from '../../hooks/useDetections';
-import { getDetectionDetail } from '../../api/client';
+import { getDetectionDetail, getTileCoverage } from '../../api/client';
 import DrawControl from './DrawControl';
 import type { Basemap, Detection } from '../../types';
 import { FEATURE_COLORS } from '../../types';
@@ -389,6 +389,98 @@ function MVTLayerManager() {
   return null;
 }
 
+/** Fetches tile coverage GeoJSON and renders fill+line layers showing LiDAR vs AWS source. */
+function TileCoverageLayer() {
+  const { current: mapRef } = useMap();
+  const showTileCoverage = useStore((s) => s.showTileCoverage);
+  const bbox = useStore((s) => s.bbox);
+  const viewState = useStore((s) => s.viewState);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  // Add source+layers once
+  useEffect(() => {
+    const map = mapRef?.getMap();
+    if (!map) return;
+    const addLayers = () => {
+      if (!map.getSource('tile-coverage')) {
+        map.addSource('tile-coverage', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      }
+      if (!map.getLayer('tile-coverage-fill')) {
+        map.addLayer({
+          id: 'tile-coverage-fill',
+          type: 'fill',
+          source: 'tile-coverage',
+          paint: {
+            'fill-color': ['match', ['get', 'source'], 'lidar', '#22c55e', 'rgba(100,116,139,0.15)'],
+            'fill-opacity': ['match', ['get', 'source'], 'lidar', 0.18, 0.08],
+          },
+        });
+      }
+      if (!map.getLayer('tile-coverage-line')) {
+        map.addLayer({
+          id: 'tile-coverage-line',
+          type: 'line',
+          source: 'tile-coverage',
+          paint: {
+            'line-color': ['match', ['get', 'source'], 'lidar', '#22c55e', '#64748b'],
+            'line-width': ['match', ['get', 'source'], 'lidar', 2, 0.5],
+            'line-opacity': ['match', ['get', 'source'], 'lidar', 0.8, 0.3],
+          },
+        });
+      }
+      if (!map.getLayer('tile-coverage-label')) {
+        map.addLayer({
+          id: 'tile-coverage-label',
+          type: 'symbol',
+          source: 'tile-coverage',
+          filter: ['==', ['get', 'source'], 'lidar'],
+          layout: {
+            'text-field': 'LiDAR',
+            'text-size': 10,
+            'text-allow-overlap': false,
+          },
+          paint: {
+            'text-color': '#22c55e',
+            'text-halo-color': 'rgba(0,0,0,0.7)',
+            'text-halo-width': 1,
+          },
+        });
+      }
+    };
+    if (map.isStyleLoaded()) addLayers();
+    map.on('style.load', addLayers);
+  }, [mapRef]);
+  // Toggle visibility
+  useEffect(() => {
+    const map = mapRef?.getMap();
+    if (!map) return;
+    const vis = showTileCoverage ? 'visible' : 'none';
+    for (const id of ['tile-coverage-fill', 'tile-coverage-line', 'tile-coverage-label']) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+    }
+  }, [showTileCoverage, mapRef]);
+  // Fetch coverage data on viewport change (debounced 500ms)
+  useEffect(() => {
+    if (!showTileCoverage || !bbox || !viewState) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      if (abortRef.current) abortRef.current.abort();
+      abortRef.current = new AbortController();
+      const z = Math.min(Math.floor(viewState.zoom), 15);
+      if (z < 8) return; // too many tiles at low zoom
+      try {
+        const geojson = await getTileCoverage(bbox[0], bbox[1], bbox[2], bbox[3], z);
+        const map = mapRef?.getMap();
+        if (map && map.getSource('tile-coverage')) {
+          (map.getSource('tile-coverage') as any).setData(geojson);
+        }
+      } catch { /* ignore fetch errors */ }
+    }, 500);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [showTileCoverage, bbox, viewState, mapRef]);
+  return null;
+}
+
 const DEFAULT_VIEW = { longitude: -79.71, latitude: 39.80, zoom: 13, pitch: 45, bearing: -15 };
 
 export default function MapView() {
@@ -454,6 +546,7 @@ export default function MapView() {
       {heatmapLayers.length > 0 && <DeckGLOverlay layers={heatmapLayers} />}
       <TerrainController />
       <MVTLayerManager />
+      <TileCoverageLayer />
       <FlyToHandler />
       <DrawControl
         active={drawingAOI}

@@ -308,6 +308,52 @@ def _make_flat_terrarium_png_256() -> bytes:
     return _flat_terrain_cache
 
 
+@router.get("/raster/terrain/coverage")
+async def get_terrain_coverage(
+    west: float = Query(..., description="West longitude"),
+    south: float = Query(..., description="South latitude"),
+    east: float = Query(..., description="East longitude"),
+    north: float = Query(..., description="North latitude"),
+    z: int = Query(..., ge=0, le=20, description="Zoom level for tile grid"),
+):
+    """Return GeoJSON tile grid for the viewport with source metadata per tile.
+
+    Each feature is a tile boundary polygon with a `source` property:
+    - "lidar": tile is rendered from a custom LiDAR DEM
+    - "aws": tile would be proxied from AWS Terrarium
+    """
+    n = 2 ** z
+    x_min = max(0, int((west + 180) / 360 * n))
+    x_max = min(n - 1, int((east + 180) / 360 * n))
+    y_min_f = (1 - math.log(math.tan(math.radians(min(north, 85.05))) + 1 / math.cos(math.radians(min(north, 85.05)))) / math.pi) / 2 * n
+    y_max_f = (1 - math.log(math.tan(math.radians(max(south, -85.05))) + 1 / math.cos(math.radians(max(south, -85.05)))) / math.pi) / 2 * n
+    y_min = max(0, int(y_min_f))
+    y_max = min(n - 1, int(y_max_f))
+    # Cap at 200 tiles to avoid blowing up the response at low zoom
+    tile_count = (x_max - x_min + 1) * (y_max - y_min + 1)
+    if tile_count > 200:
+        return {"type": "FeatureCollection", "features": []}
+    features = []
+    for tx in range(x_min, x_max + 1):
+        for ty in range(y_min, y_max + 1):
+            bbox = _tile_to_bbox(z, tx, ty)
+            dem_path = _find_dem_for_tile(*bbox)
+            source = "lidar" if dem_path else "aws"
+            features.append({
+                "type": "Feature",
+                "properties": {"z": z, "x": tx, "y": ty, "source": source},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [bbox[0], bbox[1]], [bbox[2], bbox[1]],
+                        [bbox[2], bbox[3]], [bbox[0], bbox[3]],
+                        [bbox[0], bbox[1]],
+                    ]],
+                },
+            })
+    return {"type": "FeatureCollection", "features": features}
+
+
 @router.get("/raster/terrain-rgb/{z}/{x}/{y}.png")
 async def get_terrain_rgb_tile(
     z: int,

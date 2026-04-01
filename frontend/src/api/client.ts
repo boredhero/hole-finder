@@ -92,6 +92,10 @@ export async function getJob(id: string) {
   return fetchJson<any>(`/jobs/${id}`);
 }
 
+export async function getTileCoverage(west: number, south: number, east: number, north: number, z: number) {
+  return fetchJson<GeoJSON.FeatureCollection>(`/raster/terrain/coverage?west=${west}&south=${south}&east=${east}&north=${north}&z=${z}`);
+}
+
 export async function warmTerrainCache(west: number, south: number, east: number, north: number) {
   return fetchJson<{ cached: number; rendered: number; proxied: number }>(
     `/raster/terrain/warm?west=${west}&south=${south}&east=${east}&north=${north}`,
