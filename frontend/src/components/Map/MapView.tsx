@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import Map, { NavigationControl, ScaleControl, GeolocateControl, useMap } from 'react-map-gl/maplibre';
 import { MapboxOverlay } from '@deck.gl/mapbox';
 import { HeatmapLayer } from '@deck.gl/aggregation-layers';
@@ -103,6 +103,31 @@ function DeckGLOverlay(props: { layers: any[] }) {
       // Ignore during style transitions when GL context is temporarily invalid
     }
   }, [overlay, props.layers]);
+  return null;
+}
+
+/** Manages 3D terrain via direct map.setTerrain() call with try-catch.
+ *  Using the <Map terrain={...}> prop causes react-map-gl to call setTerrain
+ *  during its React render cycle, which races with MapLibre's render loop
+ *  and throws uncatchable DOMExceptions. Calling it directly lets us catch. */
+function TerrainController() {
+  const { current: mapRef } = useMap();
+  const show3DTerrain = useStore((s) => s.show3DTerrain);
+  const terrainReady = useStore((s) => s.terrainReady);
+  const terrainExaggeration = useStore((s) => s.terrainExaggeration);
+  useEffect(() => {
+    const map = mapRef?.getMap();
+    if (!map) return;
+    requestAnimationFrame(() => {
+      try {
+        if (show3DTerrain && terrainReady) {
+          map.setTerrain({ source: 'terrain-source', exaggeration: terrainExaggeration });
+        } else {
+          map.setTerrain(null);
+        }
+      } catch { /* suppress DOMException from first terrain tile decode */ }
+    });
+  }, [mapRef, show3DTerrain, terrainReady, terrainExaggeration]);
   return null;
 }
 
@@ -356,16 +381,6 @@ export default function MapView() {
   const show3DTerrain = useStore((s) => s.show3DTerrain);
   const terrainReady = useStore((s) => s.terrainReady);
   const terrainExaggeration = useStore((s) => s.terrainExaggeration);
-  // Defer terrain activation by 2 frames — setTerrain during a React render
-  // races with MapLibre's render loop, causing DOMException on first tile decode
-  const [terrainEnabled, setTerrainEnabled] = useState(false);
-  useEffect(() => {
-    if (terrainReady && show3DTerrain) {
-      const id = requestAnimationFrame(() => requestAnimationFrame(() => setTerrainEnabled(true)));
-      return () => cancelAnimationFrame(id);
-    }
-    setTerrainEnabled(false);
-  }, [terrainReady, show3DTerrain]);
   const setBbox = useStore((s) => s.setBbox);
   const drawingAOI = useStore((s) => s.drawingAOI);
   const setDrawnAOI = useStore((s) => s.setDrawnAOI);
@@ -420,9 +435,9 @@ export default function MapView() {
           console.warn('[MapView] Map error:', e?.error?.message || e);
         });
       }}
-      terrain={terrainEnabled ? { source: 'terrain-source', exaggeration: terrainExaggeration } : undefined}
     >
       {heatmapLayers.length > 0 && <DeckGLOverlay layers={heatmapLayers} />}
+      <TerrainController />
       <MVTLayerManager />
       <FlyToHandler />
       <DrawControl
