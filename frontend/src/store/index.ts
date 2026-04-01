@@ -19,6 +19,8 @@ interface AppState {
   toggleGroundTruth: () => void;
   show3DTerrain: boolean;
   toggle3DTerrain: () => void;
+  terrainReady: boolean;
+  setTerrainReady: (v: boolean) => void;
   terrainExaggeration: number;
   setTerrainExaggeration: (v: number) => void;
 
@@ -91,6 +93,8 @@ export const useStore = create<AppState>((set) => ({
   toggleGroundTruth: () => set((s) => ({ showGroundTruth: !s.showGroundTruth })),
   show3DTerrain: true,
   toggle3DTerrain: () => set((s) => ({ show3DTerrain: !s.show3DTerrain })),
+  terrainReady: false,
+  setTerrainReady: (v) => set({ terrainReady: v }),
   terrainExaggeration: 1.5,
   setTerrainExaggeration: (v) => set({ terrainExaggeration: v }),
 

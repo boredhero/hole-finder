@@ -29,6 +29,7 @@ export default function LandingPage() {
   const setTargetViewState = useStore((s) => s.setTargetViewState);
   const setUserLocation = useStore((s) => s.setUserLocation);
   const setSearchStale = useStore((s) => s.setSearchStale);
+  const setTerrainReady = useStore((s) => s.setTerrainReady);
   const userLocation = useStore((s) => s.userLocation);
 
   const activeJobId = useStore((s) => s.activeJobId);
@@ -111,6 +112,7 @@ export default function LandingPage() {
     const lonSpan = bbox[2] - bbox[0];
     const zoom = lonSpan > 3 ? 7 : lonSpan > 1 ? 9 : 11;
     setTargetViewState({ longitude: centerLon, latitude: centerLat, zoom, pitch: 45, bearing: -15 });
+    setTerrainReady(true);
     setSearchStale(true);
     setPhase('explore');
   }, [setTargetViewState, setSearchStale]);
@@ -151,8 +153,8 @@ export default function LandingPage() {
     // Warm terrain cache BEFORE loading the map — prevents DOMExceptions
     // from uncached terrain tiles. Runs in parallel with detection fetch.
     const warmPromise = warmTerrainCache(west, south, east, north)
-      .then((res) => console.log('[HoleFinder] Terrain cache warmed:', res))
-      .catch((err) => console.warn('[HoleFinder] Terrain warm failed (non-fatal):', err));
+      .then((res) => { console.log('[HoleFinder] Terrain cache warmed:', res); setTerrainReady(true); })
+      .catch((err) => { console.warn('[HoleFinder] Terrain warm failed (non-fatal):', err); setTerrainReady(true); });
 
     const detectPromise = getDetections({
       west, south, east, north,

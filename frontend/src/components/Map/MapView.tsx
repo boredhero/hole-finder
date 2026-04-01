@@ -354,6 +354,7 @@ export default function MapView() {
   const basemap = useStore((s) => s.basemap);
   const showHeatmap = useStore((s) => s.showHeatmap);
   const show3DTerrain = useStore((s) => s.show3DTerrain);
+  const terrainReady = useStore((s) => s.terrainReady);
   const terrainExaggeration = useStore((s) => s.terrainExaggeration);
   const setBbox = useStore((s) => s.setBbox);
   const drawingAOI = useStore((s) => s.drawingAOI);
@@ -404,7 +405,7 @@ export default function MapView() {
         const bounds = map.getBounds();
         setBbox([bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]);
       }}
-      terrain={show3DTerrain ? { source: 'terrain-source', exaggeration: terrainExaggeration } : undefined}
+      terrain={show3DTerrain && terrainReady ? { source: 'terrain-source', exaggeration: terrainExaggeration } : undefined}
     >
       {heatmapLayers.length > 0 && <DeckGLOverlay layers={heatmapLayers} />}
       <MVTLayerManager />
