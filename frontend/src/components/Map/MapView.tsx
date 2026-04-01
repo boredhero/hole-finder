@@ -289,6 +289,7 @@ function MVTLayerManager() {
 
     const setup = () => {
       addMVTLayers(map);
+      console.log('[MVT] setup() complete');
 
       // Click detection dot → fetch detail → show in drawer/sidebar
       map.on('click', 'detections-circles', async (e: any) => {
@@ -355,11 +356,16 @@ function MVTLayerManager() {
       map.on('mouseleave', 'detection-outlines-fill', () => { map.getCanvas().style.cursor = ''; });
     };
 
+    // Try immediately if style already loaded, otherwise wait for ready/style.load
     if (map.isStyleLoaded()) {
       setup();
     } else {
       map.once('style.load', setup);
     }
+    // Also listen for our custom ready event (fired from Map onLoad)
+    map.on('holefinder:ready', () => {
+      if (!map.getSource('detections-mvt')) setup();
+    });
 
     // Re-add layers after basemap change destroys them
     map.on('style.load', () => {
@@ -441,6 +447,8 @@ export default function MapView() {
           if (e?.error?.message?.includes('usable') || e?.sourceId === 'terrain-source') return;
           console.warn('[MapView] Map error:', e?.error?.message || e);
         });
+        // Dispatch custom event so MVTLayerManager knows map is ready
+        map.fire('holefinder:ready');
       }}
     >
       {heatmapLayers.length > 0 && <DeckGLOverlay layers={heatmapLayers} />}
