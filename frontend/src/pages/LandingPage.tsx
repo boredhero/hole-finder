@@ -218,19 +218,61 @@ export default function LandingPage() {
 
   // --- RENDER ---
 
-  // Tour phase: map + swipeable card + settings
-  if (phase === 'tour') {
-    const d = tourDetections[tourIndex];
+  // Region picker (no map needed)
+  if (phase === 'regionPicker') {
+    return <RegionPicker onPick={handlePickRegion} onBack={() => setPhase('splash')} />;
+  }
+
+  // Map phases: processing, results, tour, explore
+  // MapView stays mounted across ALL of these to keep the WebGL context alive
+  // and prevent DOMExceptions from stale tile-load callbacks on context destruction.
+  const isMapPhase = phase === 'processing' || phase === 'results' || phase === 'tour' || phase === 'explore';
+  if (isMapPhase) {
+    const tourDetection = tourDetections[tourIndex];
     return (
       <div className="relative h-full w-full">
         <div className="absolute inset-0">
           <MapView />
         </div>
-        <TopBar />
-        <SettingsPanel />
-        {d && (
+        {/* Processing: opaque overlay hides map while GL context initializes behind it */}
+        {phase === 'processing' && (
+          <div className="absolute inset-0 z-20 bg-slate-950">
+            <ProcessingScreen
+              progress={jobProgress.progress}
+              stage={jobProgress.stage}
+              source={jobProgress.source}
+              error={jobProgress.status === 'FAILED' ? (jobProgress.error || 'Processing failed') : null}
+              onRetry={() => {
+                setActiveJobId(null);
+                setPhase('splash');
+              }}
+            />
+          </div>
+        )}
+        {phase === 'results' && (
+          <ResultsSplash
+            detections={tourDetections}
+            onDismiss={() => {
+              if (tourDetections.length > 0) {
+                const best = tourDetections[0];
+                setTargetViewState({ longitude: best.lon, latitude: best.lat, zoom: 15, pitch: 45, bearing: -15 });
+                setPhase('tour');
+              } else {
+                setSearchStale(true);
+                setPhase('explore');
+              }
+            }}
+          />
+        )}
+        {(phase === 'tour' || phase === 'explore') && (
+          <>
+            <TopBar />
+            <SettingsPanel />
+          </>
+        )}
+        {phase === 'tour' && tourDetection && (
           <SwipeCard
-            detection={d}
+            detection={tourDetection}
             userLocation={userLocation}
             currentIndex={tourIndex}
             totalCount={tourDetections.length}
@@ -240,92 +282,34 @@ export default function LandingPage() {
             onExit={handleTourExit}
           />
         )}
-      </div>
-    );
-  }
-
-  // Results splash (auto-transitions to tour)
-  if (phase === 'results') {
-    return (
-      <div className="relative h-full w-full">
-        <div className="absolute inset-0">
-          <MapView />
-        </div>
-        <ResultsSplash
-          detections={tourDetections}
-          onDismiss={() => {
-            if (tourDetections.length > 0) {
-              // Fly to the best detection
-              const best = tourDetections[0];
-              setTargetViewState({ longitude: best.lon, latitude: best.lat, zoom: 15, pitch: 45, bearing: -15 });
-              setPhase('tour');
-            } else {
-              setSearchStale(true);
-              setPhase('explore');
-            }
-          }}
-        />
-      </div>
-    );
-  }
-
-  // Processing phase: no map yet — terrain cache isn't warm
-  if (phase === 'processing') {
-    return (
-      <div className="relative h-full w-full bg-slate-950">
-        <ProcessingScreen
-          progress={jobProgress.progress}
-          stage={jobProgress.stage}
-          source={jobProgress.source}
-          error={jobProgress.status === 'FAILED' ? (jobProgress.error || 'Processing failed') : null}
-          onRetry={() => {
-            setActiveJobId(null);
-            setPhase('splash');
-          }}
-        />
-      </div>
-    );
-  }
-
-  // Explore phase — swiper replaces bottom drawer
-  if (phase === 'explore') {
-    const currentTourDetection = tourDetections[tourIndex];
-    return (
-      <div className="relative h-full w-full">
-        <div className="absolute inset-0">
-          <MapView />
-        </div>
-        <TopBar />
-        <SettingsPanel />
-        <ExploreSearchButton
-          onResults={(dets) => {
-            setTourDetections(dets);
-            setTourIndex(0);
-            if (dets.length > 0) {
-              const best = dets[0];
-              setTargetViewState({ longitude: best.lon, latitude: best.lat, zoom: 15, pitch: 45, bearing: -15 });
-            }
-          }}
-        />
-        {currentTourDetection && (
-          <SwipeCard
-            detection={currentTourDetection}
-            userLocation={userLocation}
-            currentIndex={tourIndex}
-            totalCount={tourDetections.length}
-            direction={swipeDirection}
-            onNext={handleTourNext}
-            onPrev={handleTourPrev}
-            onExit={handleSwiperDismiss}
-          />
+        {phase === 'explore' && (
+          <>
+            <ExploreSearchButton
+              onResults={(dets) => {
+                setTourDetections(dets);
+                setTourIndex(0);
+                if (dets.length > 0) {
+                  const best = dets[0];
+                  setTargetViewState({ longitude: best.lon, latitude: best.lat, zoom: 15, pitch: 45, bearing: -15 });
+                }
+              }}
+            />
+            {tourDetection && (
+              <SwipeCard
+                detection={tourDetection}
+                userLocation={userLocation}
+                currentIndex={tourIndex}
+                totalCount={tourDetections.length}
+                direction={swipeDirection}
+                onNext={handleTourNext}
+                onPrev={handleTourPrev}
+                onExit={handleSwiperDismiss}
+              />
+            )}
+          </>
         )}
       </div>
     );
-  }
-
-  // Region picker
-  if (phase === 'regionPicker') {
-    return <RegionPicker onPick={handlePickRegion} onBack={() => setPhase('splash')} />;
   }
 
   // Splash
