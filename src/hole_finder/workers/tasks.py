@@ -445,6 +445,15 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
                 else:
                     good_with_coords = []
 
+                # Filter out detections on roads, waterways, and railways (springs exempt from water)
+                if good_with_coords:
+                    from hole_finder.detection.postprocess.infrastructure_filter import filter_candidates_by_infrastructure
+                    candidates_for_infra = [item[0] for item in good_with_coords]
+                    coords_for_infra = [(item[1], item[2]) for item in good_with_coords]
+                    lons_i = [c[0] for c in coords_for_infra]
+                    lats_i = [c[1] for c in coords_for_infra]
+                    good_with_coords = filter_candidates_by_infrastructure(candidates_for_infra, coords_for_infra, min(lons_i), min(lats_i), max(lons_i), max(lats_i))
+
                 # Store detections
                 async def _store():
                     async with _async_session() as session:
