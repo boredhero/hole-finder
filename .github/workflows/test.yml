@@ -15,6 +15,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Inject version from info.yml
+        run: |
+          VERSION=$(grep '^version:' info.yml | awk '{print $2}')
+          sed -i "s/__HOLEFINDER_VERSION__/$VERSION/" pyproject.toml
+          echo "Injected version $VERSION into pyproject.toml"
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
