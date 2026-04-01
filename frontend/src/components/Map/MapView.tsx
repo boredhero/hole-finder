@@ -12,11 +12,9 @@ import DrawControl from './DrawControl';
 import type { Basemap, Detection } from '../../types';
 import { FEATURE_COLORS } from '../../types';
 
-// Use AWS Terrarium directly for 3D terrain — always available, no proxy bottleneck.
-// Our custom /api/raster/terrain/ endpoint is for hi-res LiDAR hillshade overlays.
 const TERRAIN_SOURCE = {
   type: 'raster-dem' as const,
-  tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+  tiles: ['/api/raster/terrain/{z}/{x}/{y}.png'],
   tileSize: 256,
   encoding: 'terrarium' as const,
   maxzoom: 15,

@@ -5,8 +5,11 @@ falling back to AWS Terrarium global tiles (~30m) elsewhere.
 Uses a lazy cache: first request computes + caches, subsequent requests are instant.
 """
 
+import asyncio
 import io
 import math
+import os
+import tempfile
 from pathlib import Path
 
 import httpx
@@ -22,6 +25,32 @@ router = APIRouter(tags=["raster_tiles"])
 # In-memory cache of processed DEM bounds: {path: (west, south, east, north)}
 _dem_bounds_cache: dict[str, tuple[float, float, float, float]] | None = None
 AWS_TERRAIN_URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+# Shared httpx client — reuses TLS connections to AWS across all tile requests
+_http_client: httpx.AsyncClient | None = None
+# PNG minimum valid size (header + IHDR + IEND = ~67 bytes minimum)
+_MIN_PNG_BYTES = 67
+
+def _get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.AsyncClient(timeout=15.0, limits=httpx.Limits(max_connections=20, max_keepalive_connections=10))
+    return _http_client
+
+def _atomic_write(path: Path, data: bytes) -> None:
+    """Write bytes to path atomically via temp file + rename (prevents partial reads)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        os.write(fd, data)
+        os.close(fd)
+        os.rename(tmp, str(path))
+    except Exception:
+        os.close(fd) if not os.get_inheritable(fd) else None
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _tile_to_bbox(z: int, x: int, y: int) -> tuple[float, float, float, float]:
@@ -168,63 +197,35 @@ async def get_composited_terrain_tile(z: int, x: int, y: int):
 
     Uses Terrarium encoding: elevation = (R * 256 + G + B / 256) - 32768
     Lazy cache: first request computes + saves to disk, subsequent requests serve cached.
+    Atomic writes prevent MapLibre from reading partially-written PNGs (→ DOMException).
     """
-    # 1. Check cache
-    cache_dir = settings.data_dir / "tile_cache" / "terrain" / str(z) / str(x)
-    tile_path = cache_dir / f"{y}.png"
-
+    tile_path = settings.data_dir / "tile_cache" / "terrain" / str(z) / str(x) / f"{y}.png"
+    # 1. Serve from cache — validate size to reject corrupt/partial files
     if tile_path.exists():
-        return Response(
-            content=tile_path.read_bytes(),
-            media_type="image/png",
-            headers={"Cache-Control": "public, max-age=86400"},
-        )
-
-    # 2. Check if we have a LiDAR DEM covering this tile
+        data = tile_path.read_bytes()
+        if len(data) >= _MIN_PNG_BYTES:
+            return Response(content=data, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+        tile_path.unlink(missing_ok=True)
+    # 2. Try LiDAR DEM
     bbox = _tile_to_bbox(z, x, y)
     dem_path = _find_dem_for_tile(*bbox)
-
     if dem_path:
-        # 3a. Render from our high-res LiDAR DEM
         try:
             png_bytes = _render_terrain_tile_from_dem(dem_path, z, x, y)
-            # Cache it
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            tile_path.write_bytes(png_bytes)
-            return Response(
-                content=png_bytes,
-                media_type="image/png",
-                headers={"Cache-Control": "public, max-age=86400"},
-            )
+            _atomic_write(tile_path, png_bytes)
+            return Response(content=png_bytes, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
         except Exception as e:
             log.warning("terrain_render_failed", dem=dem_path, z=z, x=x, y=y, error=str(e))
-            # Fall through to AWS
-
-    # 3b. Proxy from AWS Terrarium tiles
-    url = AWS_TERRAIN_URL.format(z=z, x=x, y=y)
+    # 3. Proxy from AWS (shared client with connection pooling)
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                png_bytes = resp.content
-                cache_dir.mkdir(parents=True, exist_ok=True)
-                tile_path.write_bytes(png_bytes)
-                return Response(
-                    content=png_bytes,
-                    media_type="image/png",
-                    headers={"Cache-Control": "public, max-age=3600"},
-                )
+        resp = await _get_http_client().get(AWS_TERRAIN_URL.format(z=z, x=x, y=y))
+        if resp.status_code == 200 and len(resp.content) >= _MIN_PNG_BYTES:
+            _atomic_write(tile_path, resp.content)
+            return Response(content=resp.content, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
     except Exception as e:
         log.warning("aws_terrain_proxy_failed", z=z, x=x, y=y, error=str(e))
-
-    # 4. Fallback: 256x256 flat sea-level terrain tile
-    # MapLibre raster-dem requires 256x256 — a 1x1 PNG breaks the decoder
-    flat_png = _make_flat_terrarium_png_256()
-    return Response(
-        content=flat_png,
-        media_type="image/png",
-        headers={"Cache-Control": "public, max-age=60"},
-    )
+    # 4. Flat fallback — always valid, MapLibre can always decode this
+    return Response(content=_make_flat_terrarium_png_256(), media_type="image/png", headers={"Cache-Control": "public, max-age=60"})
 
 
 @router.post("/raster/terrain/warm")
@@ -238,58 +239,51 @@ async def warm_terrain_cache(
 ):
     """Pre-render and cache all terrain tiles for a bbox across zoom levels.
 
-    Called after processing completes to warm the cache before the map loads.
-    For a 3km radius area at z8-z15, this is typically 20-40 tiles.
+    Uses shared httpx client, atomic writes, and batched concurrent fetches
+    (10 at a time) to avoid saturating the event loop or AWS connections.
     """
-    import asyncio
-
     cached = 0
     rendered = 0
     proxied = 0
-
+    client = _get_http_client()
+    sem = asyncio.Semaphore(10)
+    async def _warm_one(z: int, x: int, y: int) -> str:
+        tile_path = settings.data_dir / "tile_cache" / "terrain" / str(z) / str(x) / f"{y}.png"
+        if tile_path.exists() and tile_path.stat().st_size >= _MIN_PNG_BYTES:
+            return "cached"
+        bbox = _tile_to_bbox(z, x, y)
+        dem_path = _find_dem_for_tile(*bbox)
+        if dem_path:
+            try:
+                png_bytes = _render_terrain_tile_from_dem(dem_path, z, x, y)
+                _atomic_write(tile_path, png_bytes)
+                return "rendered"
+            except Exception:
+                pass
+        async with sem:
+            try:
+                resp = await client.get(AWS_TERRAIN_URL.format(z=z, x=x, y=y))
+                if resp.status_code == 200 and len(resp.content) >= _MIN_PNG_BYTES:
+                    _atomic_write(tile_path, resp.content)
+                    return "proxied"
+            except Exception:
+                pass
+        return "failed"
+    tasks = []
     for z in range(min_zoom, max_zoom + 1):
         n = 2 ** z
-        # Convert bbox to tile range
         x_min = int((west + 180) / 360 * n)
         x_max = int((east + 180) / 360 * n)
         y_min = int((1 - math.log(math.tan(math.radians(north)) + 1 / math.cos(math.radians(north))) / math.pi) / 2 * n)
         y_max = int((1 - math.log(math.tan(math.radians(south)) + 1 / math.cos(math.radians(south))) / math.pi) / 2 * n)
-
         for x in range(x_min, x_max + 1):
             for y in range(y_min, y_max + 1):
-                cache_dir = settings.data_dir / "tile_cache" / "terrain" / str(z) / str(x)
-                tile_path = cache_dir / f"{y}.png"
-
-                if tile_path.exists():
-                    cached += 1
-                    continue
-
-                bbox = _tile_to_bbox(z, x, y)
-                dem_path = _find_dem_for_tile(*bbox)
-
-                if dem_path:
-                    try:
-                        png_bytes = _render_terrain_tile_from_dem(dem_path, z, x, y)
-                        cache_dir.mkdir(parents=True, exist_ok=True)
-                        tile_path.write_bytes(png_bytes)
-                        rendered += 1
-                        continue
-                    except Exception:
-                        pass
-
-                # Proxy from AWS
-                url = AWS_TERRAIN_URL.format(z=z, x=x, y=y)
-                try:
-                    async with httpx.AsyncClient(timeout=10.0) as client:
-                        resp = await client.get(url)
-                        if resp.status_code == 200:
-                            cache_dir.mkdir(parents=True, exist_ok=True)
-                            tile_path.write_bytes(resp.content)
-                            proxied += 1
-                except Exception:
-                    pass
-
-    log.info("terrain_cache_warmed", cached=cached, rendered=rendered, proxied=proxied)
+                tasks.append(_warm_one(z, x, y))
+    results = await asyncio.gather(*tasks)
+    cached = results.count("cached")
+    rendered = results.count("rendered")
+    proxied = results.count("proxied")
+    log.info("terrain_cache_warmed", cached=cached, rendered=rendered, proxied=proxied, total=len(results))
     return {"cached": cached, "rendered": rendered, "proxied": proxied}
 
 
