@@ -13,8 +13,10 @@ from shapely.prepared import prep
 from hole_finder.utils.logging import log
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
-# Buffer distance in degrees (~15m at mid-latitudes) for line features (roads, rivers)
-LINE_BUFFER_DEG = 0.00015
+# Buffer distances in degrees for line features
+ROAD_BUFFER_DEG = 0.0003   # ~30m — highway cuts are wide
+WATER_BUFFER_DEG = 0.0003  # ~30m — creek/river banks
+RAIL_BUFFER_DEG = 0.0004   # ~40m — rail cuts through hills are wide
 
 
 def fetch_infrastructure_polygons(
@@ -61,15 +63,14 @@ def fetch_infrastructure_polygons(
                         water.append(poly)
                         continue
                 line = LineString(coords)
-                buffered = line.buffer(LINE_BUFFER_DEG)
-                if not buffered.is_valid or buffered.is_empty:
-                    continue
                 if tags.get("highway"):
-                    roads.append(buffered)
+                    roads.append(line.buffer(ROAD_BUFFER_DEG))
                 elif tags.get("waterway"):
-                    water.append(buffered)
+                    water.append(line.buffer(WATER_BUFFER_DEG))
                 elif tags.get("railway"):
-                    railways.append(buffered)
+                    railways.append(line.buffer(RAIL_BUFFER_DEG))
+                else:
+                    continue
             except Exception:
                 continue
         # Handle relations (multipolygon water bodies like lakes)

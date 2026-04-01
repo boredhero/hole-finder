@@ -48,10 +48,11 @@ export default function LandingPage() {
     console.log('[HoleFinder] Location acquired:', lat, lon);
     scanCenter.current = { lat, lon };
     setUserLocation({ lat, lon });
+    setTerrainReady(false);
     setTargetViewState({ longitude: lon, latitude: lat, zoom: 14, pitch: 45, bearing: -15 });
 
     try {
-      const { job_id } = await startConsumerScan(lat, lon, 5);
+      const { job_id } = await startConsumerScan(lat, lon, 10);
       console.log('[HoleFinder] Scan started, job:', job_id);
       setActiveJobId(job_id);
       setPhase('processing');
@@ -60,7 +61,7 @@ export default function LandingPage() {
       setSearchStale(true);
       setPhase('explore');
     }
-  }, [setUserLocation, setTargetViewState, setActiveJobId, setSearchStale]);
+  }, [setUserLocation, setTargetViewState, setActiveJobId, setSearchStale, setTerrainReady]);
 
   const handleFindNearMe = useCallback(() => {
     if (!navigator.geolocation) {
@@ -280,16 +281,7 @@ export default function LandingPage() {
           <>
             <TopBar />
             <SettingsPanel />
-            <ExploreSearchButton
-              onResults={(dets) => {
-                setTourDetections(dets);
-                setTourIndex(0);
-                if (dets.length > 0) {
-                  const best = dets[0];
-                  setTargetViewState({ longitude: best.lon, latitude: best.lat, zoom: 15, pitch: 45, bearing: -15 });
-                }
-              }}
-            />
+            <ExploreSearchButton onScan={handleLocationAcquired} />
             {tourDetection && (
               <SwipeCard
                 detection={tourDetection}
@@ -392,60 +384,19 @@ export default function LandingPage() {
   );
 }
 
-/** Floating search button that fetches detections into the swiper */
-function ExploreSearchButton({ onResults }: { onResults: (dets: Detection[]) => void }) {
+/** Floating search button — triggers a full scan for the viewport center */
+function ExploreSearchButton({ onScan }: { onScan: (lat: number, lon: number) => void }) {
   const searchStale = useStore((s) => s.searchStale);
   const bbox = useStore((s) => s.bbox);
-  const setSearchStale = useStore((s) => s.setSearchStale);
-  const [loading, setLoading] = useState(false);
-
   if (!searchStale || !bbox) return null;
-
-  // Cap bbox to ~50km span to prevent lag on very zoomed-out views
-  const clampBbox = (b: [number, number, number, number]): [number, number, number, number] => {
-    const maxSpan = 0.5; // ~50km at mid-latitudes
-    const lonCenter = (b[0] + b[2]) / 2, latCenter = (b[1] + b[3]) / 2;
-    const lonSpan = Math.min(b[2] - b[0], maxSpan), latSpan = Math.min(b[3] - b[1], maxSpan);
-    return [lonCenter - lonSpan / 2, latCenter - latSpan / 2, lonCenter + lonSpan / 2, latCenter + latSpan / 2];
-  };
-
-  const handleSearch = async () => {
-    setLoading(true);
-    setSearchStale(false);
-    const clamped = clampBbox(bbox);
-    try {
-      const data = await getDetections({
-        west: clamped[0], south: clamped[1], east: clamped[2], north: clamped[3],
-        min_confidence: 0.5,
-        limit: 50,
-      });
-      const dets: Detection[] = (data.features || []).map((f: any) => ({
-        id: f.id,
-        lon: f.geometry.coordinates[0],
-        lat: f.geometry.coordinates[1],
-        ...f.properties,
-      }));
-      dets.sort((a, b) => {
-        const aIsDepression = a.feature_type === 'depression' ? 1 : 0;
-        const bIsDepression = b.feature_type === 'depression' ? 1 : 0;
-        if (aIsDepression !== bIsDepression) return aIsDepression - bIsDepression;
-        return b.confidence - a.confidence;
-      });
-      console.log('[HoleFinder] Search found', dets.length, 'detections');
-      onResults(dets);
-    } catch (err) {
-      console.error('[HoleFinder] Search failed:', err);
-    }
-    setLoading(false);
-  };
-
+  const lat = (bbox[1] + bbox[3]) / 2;
+  const lon = (bbox[0] + bbox[2]) / 2;
   return (
     <button
-      onClick={handleSearch}
-      disabled={loading}
-      className="fixed top-16 left-1/2 -translate-x-1/2 z-30 bg-cherry-500 hover:bg-cherry-400 disabled:opacity-60 text-white font-medium text-sm px-6 py-3 rounded shadow-lg flex items-center gap-2 transition-all"
+      onClick={() => onScan(lat, lon)}
+      className="fixed top-16 left-1/2 -translate-x-1/2 z-30 bg-cherry-500 hover:bg-cherry-400 text-white font-medium text-sm px-6 py-3 rounded shadow-lg flex items-center gap-2 transition-all"
     >
-      {loading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+      <Search size={16} />
       Search this area
     </button>
   );
