@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx
 import numpy as np
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi.responses import Response
 
 from hole_finder.config import settings
@@ -229,8 +229,12 @@ async def get_composited_terrain_tile(z: int, x: int, y: int):
 
 @router.post("/raster/terrain/warm")
 async def warm_terrain_cache(
-    west: float, south: float, east: float, north: float,
-    min_zoom: int = 8, max_zoom: int = 15,
+    west: float = Query(..., description="West longitude"),
+    south: float = Query(..., description="South latitude"),
+    east: float = Query(..., description="East longitude"),
+    north: float = Query(..., description="North latitude"),
+    min_zoom: int = Query(8, ge=0, le=20),
+    max_zoom: int = Query(15, ge=0, le=20),
 ):
     """Pre-render and cache all terrain tiles for a bbox across zoom levels.
 

@@ -1,5 +1,5 @@
 server {
-    server_name anomalies.martinospizza.dev;
+    server_name holefinder.martinospizza.dev;
 
     # Proxy to compute node (.111) where API runs
     location / {
