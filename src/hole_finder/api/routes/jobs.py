@@ -174,12 +174,9 @@ async def consumer_scan(
 
     region_geom = from_shape(shape(bbox_geojson), srid=4326)
 
-    # Clear stale detections in scan area before re-processing
-    await db.execute(
-        text("DELETE FROM detections WHERE ST_Within(geometry, ST_MakeEnvelope(:w, :s, :e, :n, 4326))"),
-        {"w": body.lon - r, "s": body.lat - r, "e": body.lon + r, "n": body.lat + r},
-    )
-    await db.commit()
+    # Don't delete existing detections upfront — the Celery worker
+    # clears them only after confirming tiles are available to process.
+    # This preserves data when a scan finds no LiDAR coverage.
 
     job = Job(
         job_type=JobType.FULL_PIPELINE,
