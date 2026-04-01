@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Map, { NavigationControl, ScaleControl, GeolocateControl, useMap } from 'react-map-gl/maplibre';
 import { MapboxOverlay } from '@deck.gl/mapbox';
 import { HeatmapLayer } from '@deck.gl/aggregation-layers';
@@ -356,6 +356,16 @@ export default function MapView() {
   const show3DTerrain = useStore((s) => s.show3DTerrain);
   const terrainReady = useStore((s) => s.terrainReady);
   const terrainExaggeration = useStore((s) => s.terrainExaggeration);
+  // Defer terrain activation by 2 frames — setTerrain during a React render
+  // races with MapLibre's render loop, causing DOMException on first tile decode
+  const [terrainEnabled, setTerrainEnabled] = useState(false);
+  useEffect(() => {
+    if (terrainReady && show3DTerrain) {
+      const id = requestAnimationFrame(() => requestAnimationFrame(() => setTerrainEnabled(true)));
+      return () => cancelAnimationFrame(id);
+    }
+    setTerrainEnabled(false);
+  }, [terrainReady, show3DTerrain]);
   const setBbox = useStore((s) => s.setBbox);
   const drawingAOI = useStore((s) => s.drawingAOI);
   const setDrawnAOI = useStore((s) => s.setDrawnAOI);
@@ -404,8 +414,13 @@ export default function MapView() {
         const map = evt.target;
         const bounds = map.getBounds();
         setBbox([bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]);
+        // Suppress terrain tile decode errors — non-fatal, map shows flat terrain for failed tiles
+        map.on('error', (e: any) => {
+          if (e?.error?.message?.includes('usable') || e?.sourceId === 'terrain-source') return;
+          console.warn('[MapView] Map error:', e?.error?.message || e);
+        });
       }}
-      terrain={show3DTerrain && terrainReady ? { source: 'terrain-source', exaggeration: terrainExaggeration } : undefined}
+      terrain={terrainEnabled ? { source: 'terrain-source', exaggeration: terrainExaggeration } : undefined}
     >
       {heatmapLayers.length > 0 && <DeckGLOverlay layers={heatmapLayers} />}
       <MVTLayerManager />
