@@ -12,9 +12,11 @@ import DrawControl from './DrawControl';
 import type { Basemap, Detection } from '../../types';
 import { FEATURE_COLORS } from '../../types';
 
+// Use AWS Terrarium directly for 3D terrain — always available, no proxy bottleneck.
+// Our custom /api/raster/terrain/ endpoint is for hi-res LiDAR hillshade overlays.
 const TERRAIN_SOURCE = {
   type: 'raster-dem' as const,
-  tiles: ['/api/raster/terrain/{z}/{x}/{y}.png'],
+  tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
   tileSize: 256,
   encoding: 'terrarium' as const,
   maxzoom: 15,
@@ -203,8 +205,8 @@ function MVTLayerManager() {
         source: 'detections-mvt',
         'source-layer': 'outlines',
         paint: {
-          'fill-color': '#ff335c',
-          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0.1, 14, 0.2, 16, 0.3, 18, 0.4],
+          'fill-color': '#ff1a4a',
+          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0.15, 13, 0.25, 15, 0.35, 18, 0.5],
         },
       });
     }
@@ -215,8 +217,8 @@ function MVTLayerManager() {
         source: 'detections-mvt',
         'source-layer': 'outlines',
         paint: {
-          'line-color': '#ff0033',
-          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2, 14, 3, 16, 4, 18, 5],
+          'line-color': '#ff0044',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2, 13, 3, 15, 4, 17, 6, 18, 8],
           'line-opacity': 1.0,
         },
       });
