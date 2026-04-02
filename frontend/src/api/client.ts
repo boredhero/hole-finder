@@ -40,7 +40,7 @@ export async function getJobs() {
   return fetchJson<any>('/jobs');
 }
 
-export async function createJob(body: { job_type: string; region_name?: string; pass_config?: string }) {
+export async function createJob(body: { job_type: string; bbox?: any; pass_config?: string }) {
   return fetchJson<any>('/jobs', { method: 'POST', body: JSON.stringify(body) });
 }
 

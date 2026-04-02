@@ -19,21 +19,6 @@ def client():
     return TestClient(app)
 
 
-class TestRegionsIntegration:
-    def test_list_returns_all_5(self, client):
-        r = client.get("/api/regions")
-        assert r.status_code == 200
-        names = [reg["name"] for reg in r.json()["regions"]]
-        assert len(names) == 5
-        assert "western_pa" in names
-
-    def test_get_region_geojson(self, client):
-        r = client.get("/api/regions/western_pa")
-        assert r.status_code == 200
-        data = r.json()
-        assert "geometry" in data or "coordinates" in str(data)
-
-
 class TestHealthInfo:
     def test_health(self, client):
         r = client.get("/api/health")
@@ -54,7 +39,7 @@ class TestOpenAPISchema:
         paths = set(r.json()["paths"].keys())
         expected = [
             "/api/health", "/api/info", "/api/detections",
-            "/api/jobs", "/api/regions", "/api/ground-truth",
+            "/api/jobs", "/api/ground-truth",
             "/api/export/geojson", "/api/export/csv",
             "/api/detections/{detection_id}/comments",
             "/api/detections/{detection_id}/save",

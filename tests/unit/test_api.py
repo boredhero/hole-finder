@@ -29,30 +29,6 @@ class TestHealthEndpoint:
         assert "version" in data
 
 
-class TestRegionsEndpoint:
-    def test_list_regions(self, client):
-        r = client.get("/api/regions")
-        assert r.status_code == 200
-        data = r.json()
-        assert "regions" in data
-        names = [reg["name"] for reg in data["regions"]]
-        assert "western_pa" in names
-        assert "eastern_pa" in names
-        assert "west_virginia" in names
-        assert "eastern_ohio" in names
-        assert "upstate_ny" in names
-
-    def test_get_specific_region(self, client):
-        r = client.get("/api/regions/western_pa")
-        assert r.status_code == 200
-        data = r.json()
-        assert data.get("geometry") or data.get("type")
-
-    def test_get_nonexistent_region(self, client):
-        r = client.get("/api/regions/atlantis")
-        assert r.status_code == 404
-
-
 class TestRasterTilesEndpoint:
     def test_hillshade_tile_returns_png(self, client):
         r = client.get("/api/raster/hillshade/10/300/400.png")
@@ -112,7 +88,6 @@ class TestOpenAPI:
         assert schema["info"]["title"] == "Hole Finder"
         paths = list(schema["paths"].keys())
         assert "/api/health" in paths
-        assert "/api/regions" in paths
         assert "/api/detections" in paths
         assert "/api/jobs" in paths
 
@@ -136,8 +111,6 @@ class TestRouteStructure:
             "/api/jobs/{job_id}",
             "/api/jobs/{job_id}/cancel",
             "/api/datasets",
-            "/api/regions",
-            "/api/regions/{region_name}",
             "/api/detections/{detection_id}/validate",
             "/api/ground-truth",
             "/api/export/geojson",
@@ -156,6 +129,7 @@ class TestRouteStructure:
             "/api/detections/count",
             "/api/explore/scan",
             "/api/raster/terrain/{z}/{x}/{y}.png",
+            "/api/raster/terrain/coverage",
         ]
 
         for path in expected:

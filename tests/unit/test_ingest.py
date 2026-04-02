@@ -1,15 +1,17 @@
-"""Unit tests for ingest module — source discovery, region loading, manager."""
+"""Unit tests for ingest module — source discovery, manager."""
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from hole_finder.ingest.manager import (
     SOURCE_REGISTRY,
+    STATE_SOURCES,
     get_source,
-    get_sources_for_region,
-    load_region_bbox,
+    get_sources_for_location,
+    resolve_state,
 )
 from hole_finder.ingest.sources.usgs_3dep import USGS3DEPSource
 
@@ -17,12 +19,17 @@ from hole_finder.ingest.sources.usgs_3dep import USGS3DEPSource
 class TestSourceRegistry:
     def test_all_sources_registered(self):
         assert "usgs_3dep" in SOURCE_REGISTRY
+        assert "tnm" in SOURCE_REGISTRY
         assert "pasda" in SOURCE_REGISTRY
         assert "wv" in SOURCE_REGISTRY
         assert "ny" in SOURCE_REGISTRY
         assert "oh" in SOURCE_REGISTRY
         assert "nc" in SOURCE_REGISTRY
         assert "md" in SOURCE_REGISTRY
+        assert "va" in SOURCE_REGISTRY
+        assert "ky" in SOURCE_REGISTRY
+        assert "nj" in SOURCE_REGISTRY
+        assert "ct" in SOURCE_REGISTRY
 
     def test_get_source(self):
         source = get_source("usgs_3dep")
@@ -33,65 +40,35 @@ class TestSourceRegistry:
             get_source("nonexistent")
 
 
-class TestRegionSources:
-    def test_western_pa_sources(self):
-        sources = get_sources_for_region("western_pa")
-        assert "usgs_3dep" in sources
-        assert "pasda" in sources
+class TestStateSources:
+    def test_pa_has_pasda(self):
+        assert "pasda" in STATE_SOURCES["PA"]
 
-    def test_west_virginia_sources(self):
-        sources = get_sources_for_region("west_virginia")
-        assert "usgs_3dep" in sources
-        assert "wv" in sources
+    def test_nc_has_nc(self):
+        assert "nc" in STATE_SOURCES["NC"]
 
-    def test_western_nc_sources(self):
-        sources = get_sources_for_region("western_nc")
-        assert "usgs_3dep" in sources
-        assert "nc" in sources
+    def test_va_has_va(self):
+        assert "va" in STATE_SOURCES["VA"]
 
-    def test_western_md_sources(self):
-        sources = get_sources_for_region("western_md")
-        assert "usgs_3dep" in sources
-        assert "md" in sources
+    def test_ky_has_ky(self):
+        assert "ky" in STATE_SOURCES["KY"]
 
-    def test_south_louisiana_sources(self):
-        sources = get_sources_for_region("south_louisiana")
-        assert "usgs_3dep" in sources
+    def test_sources_for_location_always_starts_with_3dep(self):
+        with patch("hole_finder.ingest.manager.resolve_state", return_value="PA"):
+            sources = get_sources_for_location(40.0, -80.0)
+            assert sources[0] == "usgs_3dep"
+            assert "pasda" in sources
+            assert sources[-1] == "tnm"
 
-    def test_sierra_nevada_sources(self):
-        sources = get_sources_for_region("sierra_nevada")
-        assert "usgs_3dep" in sources
+    def test_sources_for_location_unknown_state(self):
+        with patch("hole_finder.ingest.manager.resolve_state", return_value=None):
+            sources = get_sources_for_location(0.0, 0.0)
+            assert sources == ["usgs_3dep", "tnm"]
 
-    def test_unknown_region_defaults_to_3dep(self):
-        sources = get_sources_for_region("mars")
-        assert sources == ["usgs_3dep"]
-
-
-class TestRegionLoading:
-    def test_load_western_pa(self):
-        bbox = load_region_bbox("western_pa")
-        assert bbox is not None
-        assert bbox.is_valid
-        # Western PA should cover roughly -80.6 to -78.5 longitude
-        bounds = bbox.bounds
-        assert bounds[0] < -78  # west
-        assert bounds[2] > -81  # east
-
-    def test_load_all_regions(self):
-        region_names = [
-            "western_pa", "eastern_pa", "west_virginia", "eastern_ohio", "upstate_ny",
-            "western_nc", "western_md", "western_ma",
-            "south_louisiana", "north_louisiana",
-            "northern_ca_lava", "sierra_nevada", "southern_ca_desert",
-        ]
-        for name in region_names:
-            bbox = load_region_bbox(name)
-            assert bbox.is_valid, f"Invalid bbox for {name}"
-            assert bbox.area > 0, f"Empty bbox for {name}"
-
-    def test_load_nonexistent_region(self):
-        with pytest.raises(FileNotFoundError):
-            load_region_bbox("atlantis")
+    def test_sources_for_location_state_without_specific_source(self):
+        with patch("hole_finder.ingest.manager.resolve_state", return_value="AK"):
+            sources = get_sources_for_location(64.0, -150.0)
+            assert sources == ["usgs_3dep", "tnm"]
 
 
 class TestUSGS3DEPSource:
@@ -136,10 +113,8 @@ class TestKnownSites:
         sites_path = Path(__file__).parent.parent / "fixtures" / "known_sites.json"
         with open(sites_path) as f:
             data = json.load(f)
-
         sites = data["validation_sites"]
         assert len(sites) >= 35, f"Expected >=35 validation sites, got {len(sites)}"
-
         for site in sites:
             assert "name" in site
             assert "lat" in site
@@ -153,7 +128,6 @@ class TestKnownSites:
         sites_path = Path(__file__).parent.parent / "fixtures" / "known_sites.json"
         with open(sites_path) as f:
             data = json.load(f)
-
         states = {s["state"] for s in data["validation_sites"]}
         assert "PA" in states
         assert "WV" in states
