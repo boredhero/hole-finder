@@ -78,15 +78,37 @@ const LIDAR_STYLE = {
   },
   layers: [
     {
-      id: 'topo-base',
-      type: 'raster' as const,
-      source: 'topo-contours',
-    },
-    {
       id: 'lidar-hillshade',
       type: 'raster' as const,
       source: 'lidar-hillshade',
-      paint: { 'raster-opacity': 0.7 },
+    },
+    {
+      id: 'topo-base',
+      type: 'raster' as const,
+      source: 'topo-contours',
+      paint: { 'raster-opacity': 0.55 },
+    },
+  ],
+};
+
+const TOPO_STYLE = {
+  version: 8 as const,
+  glyphs: MAPLIBRE_GLYPHS,
+  sources: {
+    'opentopomap': {
+      type: 'raster' as const,
+      tiles: ['https://tile.opentopomap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      maxzoom: 17,
+      attribution: 'OpenTopoMap',
+    },
+    'terrain-source': TERRAIN_SOURCE,
+  },
+  layers: [
+    {
+      id: 'topo-base',
+      type: 'raster' as const,
+      source: 'opentopomap',
     },
   ],
 };
@@ -94,7 +116,7 @@ const LIDAR_STYLE = {
 const BASEMAP_STYLES: Record<Basemap, string | object> = {
   satellite: SATELLITE_STYLE,
   lidar: LIDAR_STYLE,
-  topo: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+  topo: TOPO_STYLE,
   dark: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
 };
 
@@ -124,12 +146,13 @@ function TerrainController() {
     if (!map) return;
     requestAnimationFrame(() => {
       try {
+        if (!map.isStyleLoaded() || !map.getSource('terrain-source')) return;
         if (show3DTerrain && terrainReady) {
           map.setTerrain({ source: 'terrain-source', exaggeration: terrainExaggeration });
         } else {
           map.setTerrain(null);
         }
-      } catch { /* suppress DOMException from first terrain tile decode */ }
+      } catch { /* suppress DOMException during style transitions */ }
     });
   }, [mapRef, show3DTerrain, terrainReady, terrainExaggeration]);
   return null;
@@ -401,106 +424,89 @@ function TileCoverageLayer() {
   const viewState = useStore((s) => s.viewState);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  // Add source+layers once
-  useEffect(() => {
-    const map = mapRef?.getMap();
-    if (!map) return;
-    const addLayers = () => {
+  // Idempotent: ensures source+layers exist on the current style. Returns true if ready.
+  const ensureLayers = useCallback((map: any): boolean => {
+    try {
+      if (!map.isStyleLoaded()) return false;
       if (!map.getSource('tile-coverage')) {
         map.addSource('tile-coverage', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
       }
-      // Remove stale layers from previous style load before re-adding
-      for (const id of ['tile-coverage-label', 'tile-coverage-line', 'tile-coverage-fill']) {
-        if (map.getLayer(id)) map.removeLayer(id);
+      if (!map.getLayer('tile-coverage-fill')) {
+        map.addLayer({
+          id: 'tile-coverage-fill', type: 'fill', source: 'tile-coverage',
+          paint: {
+            'fill-color': ['match', ['get', 'source'], 'lidar', '#eab308', '#06b6d4'],
+            'fill-opacity': ['match', ['get', 'source'], 'lidar', 0.25, 0.12],
+          },
+        });
       }
-      // Add layers on top of everything (no beforeId = topmost)
-      map.addLayer({
-        id: 'tile-coverage-fill',
-        type: 'fill',
-        source: 'tile-coverage',
-        paint: {
-          'fill-color': ['match', ['get', 'source'], 'lidar', '#eab308', '#06b6d4'],
-          'fill-opacity': ['match', ['get', 'source'], 'lidar', 0.25, 0.12],
-        },
-      });
-      map.addLayer({
-        id: 'tile-coverage-line',
-        type: 'line',
-        source: 'tile-coverage',
-        paint: {
-          'line-color': ['match', ['get', 'source'], 'lidar', '#eab308', '#06b6d4'],
-          'line-width': ['match', ['get', 'source'], 'lidar', 2.5, 1],
-          'line-opacity': ['match', ['get', 'source'], 'lidar', 0.9, 0.5],
-        },
-      });
-      map.addLayer({
-        id: 'tile-coverage-label',
-        type: 'symbol',
-        source: 'tile-coverage',
-        filter: ['==', ['get', 'source'], 'lidar'],
-        layout: {
-          'text-field': 'LiDAR',
-          'text-size': 11,
-          'text-font': ['Open Sans Semibold'],
-          'text-allow-overlap': false,
-        },
-        paint: {
-          'text-color': '#eab308',
-          'text-halo-color': 'rgba(0,0,0,0.8)',
-          'text-halo-width': 1.5,
-        },
-      });
-      // Set initial visibility based on current toggle state
+      if (!map.getLayer('tile-coverage-line')) {
+        map.addLayer({
+          id: 'tile-coverage-line', type: 'line', source: 'tile-coverage',
+          paint: {
+            'line-color': ['match', ['get', 'source'], 'lidar', '#eab308', '#06b6d4'],
+            'line-width': ['match', ['get', 'source'], 'lidar', 2.5, 1],
+            'line-opacity': ['match', ['get', 'source'], 'lidar', 0.9, 0.5],
+          },
+        });
+      }
+      if (!map.getLayer('tile-coverage-label')) {
+        map.addLayer({
+          id: 'tile-coverage-label', type: 'symbol', source: 'tile-coverage',
+          filter: ['==', ['get', 'source'], 'lidar'],
+          layout: { 'text-field': 'LiDAR', 'text-size': 11, 'text-font': ['Open Sans Semibold'], 'text-allow-overlap': false },
+          paint: { 'text-color': '#eab308', 'text-halo-color': 'rgba(0,0,0,0.8)', 'text-halo-width': 1.5 },
+        });
+      }
       const vis = useStore.getState().showTileCoverage ? 'visible' : 'none';
       for (const id of ['tile-coverage-fill', 'tile-coverage-line', 'tile-coverage-label']) {
-        map.setLayoutProperty(id, 'visibility', vis);
+        if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
       }
-    };
-    if (map.isStyleLoaded()) addLayers();
-    map.on('style.load', addLayers);
-  }, [mapRef]);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+  // Register for style.load + holefinder:ready so layers survive basemap switches
+  useEffect(() => {
+    const map = mapRef?.getMap();
+    if (!map) return;
+    const handler = () => ensureLayers(map);
+    if (map.isStyleLoaded()) handler();
+    map.on('style.load', handler);
+    map.on('holefinder:ready', handler);
+    return () => { map.off('style.load', handler); map.off('holefinder:ready', handler); };
+  }, [mapRef, ensureLayers]);
   // Toggle visibility
   useEffect(() => {
     const map = mapRef?.getMap();
     if (!map) return;
     const vis = showTileCoverage ? 'visible' : 'none';
-    console.log('[TileCoverage] Toggle:', vis, 'layers exist:', !!map.getLayer('tile-coverage-fill'), 'source exists:', !!map.getSource('tile-coverage'));
     for (const id of ['tile-coverage-fill', 'tile-coverage-line', 'tile-coverage-label']) {
-      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+      try { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis); } catch { /* style transition */ }
     }
   }, [showTileCoverage, mapRef]);
   // Fetch coverage data on viewport change (debounced 500ms)
   useEffect(() => {
-    if (!showTileCoverage || !bbox || !viewState) {
-      console.log('[TileCoverage] Fetch skipped:', { showTileCoverage, hasBbox: !!bbox, hasViewState: !!viewState });
-      return;
-    }
+    if (!showTileCoverage || !bbox || !viewState) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       if (abortRef.current) abortRef.current.abort();
       abortRef.current = new AbortController();
       const z = Math.min(Math.floor(viewState.zoom), 15);
-      if (z < 8) {
-        console.log('[TileCoverage] Zoom too low:', z);
-        return;
-      }
-      console.log('[TileCoverage] Fetching coverage z=%d bbox=[%s]', z, bbox.map(v => v.toFixed(4)).join(', '));
+      if (z < 8) return;
       try {
         const geojson = await getTileCoverage(bbox[0], bbox[1], bbox[2], bbox[3], z);
-        console.log('[TileCoverage] Got %d features (%d lidar, %d aws)', geojson.features?.length ?? 0, geojson.features?.filter((f: any) => f.properties?.source === 'lidar').length ?? 0, geojson.features?.filter((f: any) => f.properties?.source === 'aws').length ?? 0);
         const map = mapRef?.getMap();
-        if (map && map.getSource('tile-coverage')) {
+        if (!map) return;
+        ensureLayers(map);
+        if (map.getSource('tile-coverage')) {
           (map.getSource('tile-coverage') as any).setData(geojson);
-          console.log('[TileCoverage] Data set on source');
-        } else {
-          console.warn('[TileCoverage] Map or source not available');
         }
-      } catch (err) {
-        console.error('[TileCoverage] Fetch failed:', err);
-      }
+      } catch { /* fetch aborted or failed */ }
     }, 500);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [showTileCoverage, bbox, viewState, mapRef]);
+  }, [showTileCoverage, bbox, viewState, mapRef, ensureLayers]);
   return null;
 }
 
