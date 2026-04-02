@@ -12,16 +12,19 @@ def main():
 
 
 @main.command()
-@click.option("--region", required=True, help="Region name (e.g., western_pa)")
-@click.option("--source", default=None, help="Specific source (default: auto from region)")
-def discover(region: str, source: str | None):
-    """Discover available LiDAR tiles for a region."""
-    from hole_finder.ingest.manager import discover_region
+@click.option("--lat", required=True, type=float, help="Center latitude")
+@click.option("--lon", required=True, type=float, help="Center longitude")
+@click.option("--radius", default=5.0, type=float, help="Radius in km (default 5)")
+def discover(lat: float, lon: float, radius: float):
+    """Discover available LiDAR tiles for a location."""
+    from shapely.geometry import box
+    from hole_finder.ingest.manager import discover_tiles_for_bbox
     from hole_finder.utils.logging import setup_logging
-
     setup_logging()
-    tiles = asyncio.run(discover_region(region))
-    click.echo(f"Found {len(tiles)} tiles for {region}")
+    r = radius / 111.32
+    bbox = box(lon - r, lat - r, lon + r, lat + r)
+    tiles, source = asyncio.run(discover_tiles_for_bbox(bbox, lat, lon))
+    click.echo(f"Found {len(tiles)} tiles via {source}")
     for tile in tiles[:10]:
         click.echo(f"  {tile.source_id}: {tile.format} ({tile.file_size_bytes or '?'} bytes)")
     if len(tiles) > 10:
@@ -32,38 +35,7 @@ def discover(region: str, source: str | None):
 def seed():
     """Seed the database with known validation sites."""
     from scripts.seed_validation_sites import seed as do_seed
-
     asyncio.run(do_seed())
-
-
-@main.command()
-@click.option("--region", required=True)
-def ingest(region: str):
-    """Download LiDAR tiles for a region."""
-    from hole_finder.ingest.manager import discover_region, download_tiles, get_sources_for_region
-    from hole_finder.utils.logging import setup_logging
-
-    setup_logging()
-
-    async def _run():
-        tiles = await discover_region(region)
-        click.echo(f"Discovered {len(tiles)} tiles, downloading...")
-        for source_name in get_sources_for_region(region):
-            source_tiles = [t for t in tiles if source_name in t.source_id.lower() or True]
-            paths = await download_tiles(source_tiles[:5], source_name)  # limit for safety
-            click.echo(f"  Downloaded {len(paths)} tiles from {source_name}")
-
-    asyncio.run(_run())
-
-
-@main.command()
-def regions():
-    """List available regions."""
-    from pathlib import Path
-
-    region_dir = Path(__file__).parent.parent.parent / "configs" / "regions"
-    for f in sorted(region_dir.glob("*.geojson")):
-        click.echo(f"  {f.stem}")
 
 
 if __name__ == "__main__":
