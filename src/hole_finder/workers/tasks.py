@@ -534,8 +534,9 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                      progress=f"{completed_tiles}/{len(downloaded)}")
             return result
 
-        # Run 8 tiles in parallel
-        PARALLEL_TILES = 8
+        # Each PDAL subprocess uses ~6 GB RAM. Keep parallelism low to avoid OOM.
+        # 3 × 6 GB = ~18 GB peak, leaving plenty of headroom on a 64 GB box.
+        PARALLEL_TILES = 3
         tile_results = []
         with profiler.stage("parallel_processing", parallel=PARALLEL_TILES) as pctx:
             with ThreadPoolExecutor(max_workers=PARALLEL_TILES) as executor:
