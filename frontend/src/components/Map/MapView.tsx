@@ -495,7 +495,12 @@ function TileCoverageLayer() {
       if (abortRef.current) abortRef.current.abort();
       abortRef.current = new AbortController();
       const z = Math.min(Math.floor(viewState.zoom), 15);
-      if (z < 8) return;
+      if (z < 12) {
+        // Clear stale coverage when zoomed too far out (z<12 tiles are huge)
+        const map = mapRef?.getMap();
+        if (map?.getSource('tile-coverage')) (map.getSource('tile-coverage') as any).setData({ type: 'FeatureCollection', features: [] });
+        return;
+      }
       try {
         const geojson = await getTileCoverage(bbox[0], bbox[1], bbox[2], bbox[3], z);
         const map = mapRef?.getMap();
