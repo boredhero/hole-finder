@@ -464,26 +464,40 @@ function TileCoverageLayer() {
     const map = mapRef?.getMap();
     if (!map) return;
     const vis = showTileCoverage ? 'visible' : 'none';
+    console.log('[TileCoverage] Toggle:', vis, 'layers exist:', !!map.getLayer('tile-coverage-fill'), 'source exists:', !!map.getSource('tile-coverage'));
     for (const id of ['tile-coverage-fill', 'tile-coverage-line', 'tile-coverage-label']) {
       if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
     }
   }, [showTileCoverage, mapRef]);
   // Fetch coverage data on viewport change (debounced 500ms)
   useEffect(() => {
-    if (!showTileCoverage || !bbox || !viewState) return;
+    if (!showTileCoverage || !bbox || !viewState) {
+      console.log('[TileCoverage] Fetch skipped:', { showTileCoverage, hasBbox: !!bbox, hasViewState: !!viewState });
+      return;
+    }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       if (abortRef.current) abortRef.current.abort();
       abortRef.current = new AbortController();
       const z = Math.min(Math.floor(viewState.zoom), 15);
-      if (z < 8) return; // too many tiles at low zoom
+      if (z < 8) {
+        console.log('[TileCoverage] Zoom too low:', z);
+        return;
+      }
+      console.log('[TileCoverage] Fetching coverage z=%d bbox=[%s]', z, bbox.map(v => v.toFixed(4)).join(', '));
       try {
         const geojson = await getTileCoverage(bbox[0], bbox[1], bbox[2], bbox[3], z);
+        console.log('[TileCoverage] Got %d features (%d lidar, %d aws)', geojson.features?.length ?? 0, geojson.features?.filter((f: any) => f.properties?.source === 'lidar').length ?? 0, geojson.features?.filter((f: any) => f.properties?.source === 'aws').length ?? 0);
         const map = mapRef?.getMap();
         if (map && map.getSource('tile-coverage')) {
           (map.getSource('tile-coverage') as any).setData(geojson);
+          console.log('[TileCoverage] Data set on source');
+        } else {
+          console.warn('[TileCoverage] Map or source not available');
         }
-      } catch { /* ignore fetch errors */ }
+      } catch (err) {
+        console.error('[TileCoverage] Fetch failed:', err);
+      }
     }, 500);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [showTileCoverage, bbox, viewState, mapRef]);
