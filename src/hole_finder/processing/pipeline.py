@@ -132,6 +132,7 @@ class ProcessingPipeline:
         return ProcessedTile(
             tile_dir=tile_dir, dem_path=dem_path, filled_dem_path=filled_path,
             derivative_paths=derivative_paths, resolution_m=self.resolution,
+            crs=self._read_crs(dem_path),
         )
 
     def process_dem_file(self, dem_path: Path, force: bool = False) -> ProcessedTile:
@@ -165,7 +166,18 @@ class ProcessingPipeline:
         return ProcessedTile(
             tile_dir=tile_dir, dem_path=dem_path, filled_dem_path=filled_path,
             derivative_paths=derivative_paths, resolution_m=self.resolution,
+            crs=self._read_crs(dem_path),
         )
+
+    @staticmethod
+    def _read_crs(dem_path: Path) -> int:
+        """Read EPSG code from a DEM file, fallback to 32617."""
+        try:
+            import rasterio
+            with rasterio.open(dem_path) as src:
+                return (src.crs.to_epsg() if src.crs else None) or 32617
+        except Exception:
+            return 32617
 
     def _load_existing(self, tile_dir: Path, deriv_dir: Path) -> ProcessedTile:
         """Load an already-processed tile from disk."""
@@ -184,4 +196,5 @@ class ProcessingPipeline:
         return ProcessedTile(
             tile_dir=tile_dir, dem_path=dem_path, filled_dem_path=filled_path,
             derivative_paths=derivative_paths, resolution_m=self.resolution,
+            crs=self._read_crs(dem_path) if dem_path.exists() else 32617,
         )

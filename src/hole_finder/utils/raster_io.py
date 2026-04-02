@@ -16,7 +16,7 @@ def read_dem(path: Path) -> tuple[NDArray[np.float32], Affine, int]:
     with rasterio.open(path) as src:
         dem = src.read(1).astype(np.float32)
         transform = src.transform
-        crs = src.crs.to_epsg() or 32617
+        crs = (src.crs.to_epsg() if src.crs else None) or 32617
     return dem, transform, crs
 
 
