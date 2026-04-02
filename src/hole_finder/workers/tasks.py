@@ -279,6 +279,20 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
             _update_job("FAILED", 0, "No LiDAR data available for this area. Try a different location — coverage varies.", summary={"tiles": 0, "detections": 0})
             return
 
+        # Compute tile limit early — needed for stale clearing and download
+        async def _get_tile_limit():
+            async with _async_session() as session:
+                job = await session.get(Job, UUID(job_id))
+                if job and job.config and "tile_limit" in job.config:
+                    return job.config["tile_limit"]
+            return 500
+        config_limit = asyncio.run(_get_tile_limit())
+        tile_limit = min(len(tiles), config_limit)
+
+        # Sort tiles by distance to bbox center so we get radial coverage
+        centroid = bbox.centroid
+        tiles.sort(key=lambda t: t.bbox.centroid.distance(centroid))
+
         # Clear ALL stale data in scan area — detections + processed tiles on disk
         b = bbox.bounds
         async def _clear_stale():
@@ -302,17 +316,6 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
         source_name = source_used
         _update_job("RUNNING", 10, f"Downloading {len(tiles)} tiles", stage="downloading",
                      summary={"stage": "downloading", "source": source_name})
-
-        # Download tiles — parallel, respect config tile_limit (consumer jobs: 4)
-        async def _get_tile_limit():
-            async with _async_session() as session:
-                job = await session.get(Job, UUID(job_id))
-                if job and job.config and "tile_limit" in job.config:
-                    return job.config["tile_limit"]
-            return 500
-
-        config_limit = asyncio.run(_get_tile_limit())
-        tile_limit = min(len(tiles), config_limit)
         downloaded = []
         with profiler.stage("tile_downloads", tile_limit=tile_limit) as ctx:
             dl_source_name = source_used
@@ -340,9 +343,6 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                                         tile=tile.filename, error=str(e))
                             return None
 
-                # Sort tiles by distance to bbox center so we get radial coverage, not a strip
-                centroid = bbox.centroid
-                tiles.sort(key=lambda t: t.bbox.centroid.distance(centroid))
                 tasks = [_dl(tile, i) for i, tile in enumerate(tiles[:tile_limit])]
                 results = await aio.gather(*tasks)
                 return [(p, s) for p, s in [r for r in results if r is not None]]
