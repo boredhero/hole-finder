@@ -28,6 +28,42 @@ class ProcessedTile:
     crs: int = 32617
 
 
+def _ensure_geotiff_keys(dem_path: Path) -> None:
+    """Re-encode DEM with proper GeoTIFF keys if it only has WKT CRS.
+    WhiteboxTools panics on 'TIFF file does not contain geokeys' when PDAL
+    writes compound CRS (UTM + NAVD88) as WKT-only. Extract horizontal EPSG
+    and re-write via gdal_translate to embed GeoKeys."""
+    import re
+    import rasterio
+    with rasterio.open(dem_path) as src:
+        crs = src.crs
+        if not crs:
+            return
+        epsg = crs.to_epsg()
+        if epsg:
+            return  # Already has a clean EPSG → GeoKeys are fine
+    # Extract horizontal EPSG from compound CRS
+    from pyproj import CRS as PyprojCRS
+    pcrs = PyprojCRS(crs)
+    horiz = pcrs.sub_crs_list[0] if pcrs.is_compound and pcrs.sub_crs_list else pcrs
+    h_epsg = horiz.to_epsg()
+    if not h_epsg:
+        m = re.search(r'UTM zone (\d+)([NS])', str(crs))
+        if m:
+            h_epsg = 26900 + int(m.group(1)) if m.group(2) == 'N' else 32700 + int(m.group(1))
+    if not h_epsg:
+        log.warning("geotiff_keys_unknown_crs", path=str(dem_path))
+        return
+    tmp = dem_path.with_suffix('.tmp.tif')
+    result = subprocess.run(["gdal_translate", "-a_srs", f"EPSG:{h_epsg}", "-co", "COMPRESS=DEFLATE", "-co", "TILED=YES", str(dem_path), str(tmp)], capture_output=True, text=True, timeout=120)
+    if result.returncode == 0 and tmp.exists():
+        tmp.rename(dem_path)
+        log.info("geotiff_keys_fixed", path=str(dem_path), epsg=h_epsg)
+    else:
+        tmp.unlink(missing_ok=True)
+        log.warning("geotiff_keys_fix_failed", path=str(dem_path), error=result.stderr[:200])
+
+
 def generate_dem_pdal(
     input_path: Path,
     output_dir: Path,
@@ -65,6 +101,9 @@ def generate_dem_pdal(
         pdal_elapsed = time.perf_counter() - t0
         if proc.returncode != 0:
             raise RuntimeError(f"PDAL DEM failed: {proc.stderr[:500]}")
+        # Ensure DEM has GeoTIFF keys (not just WKT) — WhiteboxTools panics without them.
+        # Compound CRS from PDAL (UTM + NAVD88) writes WKT only. Re-encode with horizontal EPSG.
+        _ensure_geotiff_keys(dem_path)
         log.info("pdal_dem_complete", elapsed_s=round(pdal_elapsed, 2), output=str(dem_path))
         if profiler:
             profiler.record("pdal_dem_generation", pdal_elapsed, parent="processing")
