@@ -17,6 +17,7 @@ const TERRAIN_SOURCE = {
   tiles: ['/api/raster/terrain/{z}/{x}/{y}.png'],
   tileSize: 256,
   encoding: 'terrarium' as const,
+  minzoom: 7,
   maxzoom: 15,
 };
 
