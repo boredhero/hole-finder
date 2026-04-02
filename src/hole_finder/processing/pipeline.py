@@ -110,7 +110,11 @@ class ProcessingPipeline:
 
         marker = tile_dir / ".processed"
         if marker.exists() and not force and settings.enable_processing_cache:
-            return self._load_existing(tile_dir, deriv_dir)
+            cached = self._load_existing(tile_dir, deriv_dir)
+            if cached.dem_path.exists() and len(cached.derivative_paths) >= 3:
+                return cached
+            log.warning("stale_cache_reprocessing", tile_dir=str(tile_dir), derivatives=len(cached.derivative_paths))
+            marker.unlink(missing_ok=True)
 
         profiler = new_profiler(f"process_point_cloud:{stem}")
 
@@ -139,7 +143,11 @@ class ProcessingPipeline:
 
         marker = tile_dir / ".processed"
         if marker.exists() and not force and settings.enable_processing_cache:
-            return self._load_existing(tile_dir, deriv_dir)
+            cached = self._load_existing(tile_dir, deriv_dir)
+            if cached.dem_path.exists() and len(cached.derivative_paths) >= 3:
+                return cached
+            log.warning("stale_cache_reprocessing", tile_dir=str(tile_dir), derivatives=len(cached.derivative_paths))
+            marker.unlink(missing_ok=True)
 
         profiler = new_profiler(f"process_dem:{stem}")
 
