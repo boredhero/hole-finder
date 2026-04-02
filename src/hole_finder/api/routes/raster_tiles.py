@@ -136,9 +136,17 @@ def _scan_dem_bounds() -> dict[str, tuple[float, float, float, float]]:
                     if epsg:
                         src_crs = f"EPSG:{epsg}"
                     else:
+                        # Compound CRS (UTM + vertical datum) — extract horizontal component
                         pcrs = PyprojCRS(crs)
                         horiz = pcrs.sub_crs_list[0] if pcrs.sub_crs_list else pcrs
-                        src_crs = f"EPSG:{horiz.to_epsg()}" if horiz.to_epsg() else horiz
+                        h_epsg = horiz.to_epsg()
+                        if not h_epsg:
+                            # Last resort: parse UTM zone from CRS name (e.g. "NAD83 / UTM zone 17N")
+                            import re
+                            m = re.search(r'UTM zone (\d+)([NS])', str(crs))
+                            if m:
+                                h_epsg = 26900 + int(m.group(1)) if m.group(2) == 'N' else 32700 + int(m.group(1))
+                        src_crs = f"EPSG:{h_epsg}" if h_epsg else horiz
                     transformer = Transformer.from_crs(src_crs, "EPSG:4326", always_xy=True)
                     west, south = transformer.transform(b.left, b.bottom)
                     east, north = transformer.transform(b.right, b.top)
