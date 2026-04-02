@@ -37,7 +37,10 @@ export default function JobPanel() {
                   <div className="h-full bg-hotpink-500 rounded transition-all duration-500 ease-out" style={{ width: `${Math.max(job.progress, 2)}%` }} />
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-mono text-amaranth-300">{job.progress.toFixed(0)}%</span>
+                  <span className="text-sm font-mono text-amaranth-300">
+                    {job.progress.toFixed(0)}%
+                    {(job.result_summary as any)?.download_mb != null && <span className="text-slate-500 ml-2">{(job.result_summary as any).download_mb} MB</span>}
+                  </span>
                   <button onClick={() => cancelJob.mutate(job.id)} className="text-red-400 hover:text-red-300 text-sm flex items-center gap-1">
                     <X size={14} /> Cancel
                   </button>

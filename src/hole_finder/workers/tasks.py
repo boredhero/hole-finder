@@ -15,6 +15,7 @@ asyncio + Celery note:
 """
 
 import asyncio
+import math
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -278,14 +279,25 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
             _update_job("FAILED", 0, "No LiDAR data available for this area. Try a different location — coverage varies.", summary={"tiles": 0, "detections": 0})
             return
 
-        # Clear stale detections in scan area
+        # Clear ALL stale data in scan area — detections + processed tiles on disk
         b = bbox.bounds
         async def _clear_stale():
             async with _async_session() as session:
                 from sqlalchemy import text
-                await session.execute(text("DELETE FROM detections WHERE ST_Within(geometry, ST_MakeEnvelope(:w, :s, :e, :n, 4326))"), {"w": b[0], "s": b[1], "e": b[2], "n": b[3]})
+                result = await session.execute(text("DELETE FROM detections WHERE ST_Within(geometry, ST_MakeEnvelope(:w, :s, :e, :n, 4326))"), {"w": b[0], "s": b[1], "e": b[2], "n": b[3]})
+                deleted = result.rowcount
                 await session.commit()
+                if deleted:
+                    log.info("stale_detections_cleared", count=deleted, bbox=[round(v, 4) for v in b])
         asyncio.run(_clear_stale())
+        # Wipe processed tile dirs that will be re-downloaded (forces fresh processing)
+        import shutil
+        for tile in tiles[:tile_limit]:
+            stem = tile.filename.replace(".copc.laz", "").replace(".laz", "").replace(".las", "")
+            tile_dir = settings.processed_dir / stem
+            if tile_dir.exists():
+                shutil.rmtree(tile_dir, ignore_errors=True)
+                log.info("stale_tile_dir_cleared", dir=str(tile_dir))
 
         source_name = source_used
         _update_job("RUNNING", 10, f"Downloading {len(tiles)} tiles", stage="downloading",
@@ -394,7 +406,9 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
 
             # Process: PDAL → DEM → derivatives
             t0 = time.perf_counter()
+            tile_result = None
             try:
+                log.info("processing_tile", index=i, tile=Path(tile_path).name, size_mb=round(Path(tile_path).stat().st_size / 1e6, 1))
                 pipeline = ProcessingPipeline(output_dir=settings.processed_dir)
                 input_path = Path(tile_path)
                 if input_path.suffix in (".laz", ".las"):
@@ -403,6 +417,7 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                     tile_result = pipeline.process_dem_file(input_path)
                 result["process_s"] = round(time.perf_counter() - t0, 2)
                 result["derivatives"] = len(tile_result.derivative_paths)
+                log.info("processing_complete", index=i, tile=Path(tile_path).name, process_s=result["process_s"], derivatives=list(tile_result.derivative_paths.keys()), crs=tile_result.crs, dem=str(tile_result.dem_path))
             except Exception as e:
                 log.error("process_tile_failed", tile=tile_path, error=str(e))
                 result["error"] = f"process: {e}"
@@ -411,28 +426,48 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
             # Detect
             t0 = time.perf_counter()
             try:
+                log.info("detection_starting", tile=Path(tile_path).stem, dem=str(tile_result.dem_path), crs=tile_result.crs, derivatives=list(tile_result.derivative_paths.keys()))
                 candidates = runner.run_on_dem(
                     tile_result.dem_path,
                     tile_result.derivative_paths,
                 )
+                log.info("detection_raw", tile=Path(tile_path).stem, raw_candidates=len(candidates))
 
                 crs_code = tile_result.crs or 32617
                 transformer = Transformer.from_crs(f"EPSG:{crs_code}", "EPSG:4326", always_xy=True)
+                # Sanity check: transform a known point from the DEM bounds
+                import rasterio as _rio
+                with _rio.open(tile_result.dem_path) as _src:
+                    _bnd = _src.bounds
+                _test_lon, _test_lat = transformer.transform(_bnd.left, _bnd.bottom)
+                if not (math.isfinite(_test_lon) and math.isfinite(_test_lat)):
+                    raise RuntimeError(f"CRS transform produces infinity: EPSG:{crs_code} ({_bnd.left},{_bnd.bottom}) -> ({_test_lon},{_test_lat})")
+                log.info("crs_transform_ok", crs=crs_code, test_point=f"({round(_test_lon,4)},{round(_test_lat,4)})")
+
                 good = [c for c in candidates
                         if c.score > 0.3
                         and c.morphometrics.get("area_m2", 0) > 50
                         and c.morphometrics.get("depth_m", 0) > 0.5
                         and (c.morphometrics.get("depth_m", 0)
                              or c.morphometrics.get("lrm_anomaly_m", 0)) < 100]
+                log.info("detection_filtered", tile=Path(tile_path).stem, after_filter=len(good), before_filter=len(candidates))
                 # Keep only top 50 per tile, sorted by score
                 good.sort(key=lambda c: c.score, reverse=True)
                 good = good[:50]
 
-                # Transform centroids to WGS84 for building filter
+                # Transform centroids to WGS84, discard any with infinity/NaN coords
                 wgs84_points = []
                 for c in good:
                     lon, lat = transformer.transform(c.geometry.x, c.geometry.y)
-                    wgs84_points.append((lon, lat))
+                    if not (math.isfinite(lon) and math.isfinite(lat)):
+                        log.warning("infinite_coord_skipped", geom_x=c.geometry.x, geom_y=c.geometry.y, score=round(c.score, 2))
+                        wgs84_points.append(None)
+                    else:
+                        wgs84_points.append((lon, lat))
+                # Remove candidates with bad coords
+                paired = [(c, p) for c, p in zip(good, wgs84_points) if p is not None]
+                good = [c for c, _ in paired]
+                wgs84_points = [p for _, p in paired]
 
                 # Filter out detections on buildings using OSM data
                 if wgs84_points:
@@ -473,7 +508,9 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                     good_with_coords = filter_candidates_by_infrastructure(candidates_for_infra, coords_for_infra, min(lons_i), min(lats_i), max(lons_i), max(lats_i))
 
                 # Store detections
+                log.info("storing_detections", tile=Path(tile_path).stem, count=len(good_with_coords))
                 async def _store():
+                    stored = 0
                     async with _async_session() as session:
                         for item in good_with_coords:
                             if len(item) == 3:
@@ -481,6 +518,9 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                             else:
                                 c = item[0]
                                 lon, lat = transformer.transform(c.geometry.x, c.geometry.y)
+                            if not (math.isfinite(lon) and math.isfinite(lat)):
+                                log.warning("infinite_coord_in_store", lon=lon, lat=lat)
+                                continue
                             outline_wgs84 = _transform_outline(c.outline, transformer)
                             det = Detection(
                                 feature_type=ft_map.get(c.feature_type.value, DBFeatureType.UNKNOWN),
@@ -496,15 +536,18 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                                                for k, v in c.morphometrics.items()},
                             )
                             session.add(det)
+                            stored += 1
                         await session.commit()
+                    return stored
 
-                asyncio.run(_store())
+                stored_count = asyncio.run(_store())
                 result["detect_s"] = round(time.perf_counter() - t0, 2)
                 result["raw_candidates"] = len(candidates)
-                result["stored"] = len(good_with_coords)
+                result["stored"] = stored_count
+                log.info("tile_detections_stored", tile=Path(tile_path).stem, stored=stored_count, raw=len(candidates), filtered=len(good))
 
                 with _det_lock:
-                    total_detections += len(good_with_coords)
+                    total_detections += stored_count
             except Exception as e:
                 log.error("detect_tile_failed", tile=tile_path, error=str(e))
                 result["error"] = f"detect: {e}"
