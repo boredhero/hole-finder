@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Map, { NavigationControl, ScaleControl, GeolocateControl, useMap } from 'react-map-gl/maplibre';
 import { MapboxOverlay } from '@deck.gl/mapbox';
 import { HeatmapLayer } from '@deck.gl/aggregation-layers';
@@ -511,6 +511,38 @@ function TileCoverageLayer() {
   return null;
 }
 
+/** Right-click (desktop) / long-press (mobile) → copy GPS coordinates to clipboard with toast. */
+function CoordinateCopy() {
+  const { current: mapRef } = useMap();
+  const [toast, setToast] = useState<{ text: string; x: number; y: number } | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const map = mapRef?.getMap();
+    if (!map) return;
+    const handler = (e: any) => {
+      e.preventDefault();
+      const lat = e.lngLat.lat.toFixed(6);
+      const lon = e.lngLat.lng.toFixed(6);
+      const text = `${lat}, ${lon}`;
+      navigator.clipboard.writeText(text).catch(() => {});
+      const point = e.point;
+      setToast({ text, x: point.x, y: point.y });
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setToast(null), 2000);
+    };
+    map.on('contextmenu', handler);
+    return () => { map.off('contextmenu', handler); };
+  }, [mapRef]);
+  if (!toast) return null;
+  return (
+    <div className="absolute z-50 pointer-events-none" style={{ left: toast.x, top: toast.y, transform: 'translate(-50%, -120%)' }}>
+      <div className="bg-slate-900/90 text-white text-sm font-mono px-3 py-1.5 rounded shadow-lg border border-slate-600/50 whitespace-nowrap">
+        {toast.text} <span className="text-slate-400 ml-1">copied</span>
+      </div>
+    </div>
+  );
+}
+
 const DEFAULT_VIEW = { longitude: -79.71, latitude: 39.80, zoom: 13, pitch: 45, bearing: -15 };
 
 export default function MapView() {
@@ -577,6 +609,7 @@ export default function MapView() {
       <TerrainController />
       <MVTLayerManager />
       <TileCoverageLayer />
+      <CoordinateCopy />
       <FlyToHandler />
       <DrawControl
         active={drawingAOI}
