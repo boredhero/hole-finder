@@ -156,13 +156,25 @@ def _scan_dem_bounds() -> dict[str, tuple[float, float, float, float]]:
 
 
 def _find_dem_for_tile(west: float, south: float, east: float, north: float) -> str | None:
-    """Find a processed DEM that covers the given WGS84 bbox."""
+    """Find a processed DEM that overlaps the given WGS84 bbox.
+    Returns the DEM with the most overlap (best coverage for this tile).
+    rasterio.reproject handles partial coverage gracefully — pixels outside
+    the DEM get nodata (0m elevation), so partial overlap is fine."""
     bounds = _scan_dem_bounds()
+    best_path = None
+    best_overlap = 0.0
     for path, (dw, ds, de, dn) in bounds.items():
-        # Check overlap
-        if dw <= west and ds <= south and de >= east and dn >= north:
-            return path
-    return None
+        # Check bbox intersection
+        ow = max(dw, west)
+        os_ = max(ds, south)
+        oe = min(de, east)
+        on = min(dn, north)
+        if ow < oe and os_ < on:
+            overlap = (oe - ow) * (on - os_)
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_path = path
+    return best_path
 
 
 def _render_terrain_tile_from_dem(dem_path: str, z: int, x: int, y: int) -> bytes:
