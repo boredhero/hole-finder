@@ -411,7 +411,7 @@ function TileCoverageLayer() {
           type: 'fill',
           source: 'tile-coverage',
           paint: {
-            'fill-color': ['match', ['get', 'source'], 'lidar', '#22c55e', 'rgba(100,116,139,0.15)'],
+            'fill-color': ['match', ['get', 'source'], 'lidar', '#eab308', '#06b6d4'],
             'fill-opacity': ['match', ['get', 'source'], 'lidar', 0.18, 0.08],
           },
         });
@@ -422,7 +422,7 @@ function TileCoverageLayer() {
           type: 'line',
           source: 'tile-coverage',
           paint: {
-            'line-color': ['match', ['get', 'source'], 'lidar', '#22c55e', '#64748b'],
+            'line-color': ['match', ['get', 'source'], 'lidar', '#eab308', '#06b6d4'],
             'line-width': ['match', ['get', 'source'], 'lidar', 2, 0.5],
             'line-opacity': ['match', ['get', 'source'], 'lidar', 0.8, 0.3],
           },
@@ -440,7 +440,7 @@ function TileCoverageLayer() {
             'text-allow-overlap': false,
           },
           paint: {
-            'text-color': '#22c55e',
+            'text-color': '#eab308',
             'text-halo-color': 'rgba(0,0,0,0.7)',
             'text-halo-width': 1,
           },
