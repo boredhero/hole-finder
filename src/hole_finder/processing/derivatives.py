@@ -29,6 +29,14 @@ def _get_wbt():
     return wbt
 
 
+def _wbt_check(ret: int, name: str, out: str) -> None:
+    """Check WBT return code and verify output file exists."""
+    if ret != 0:
+        raise RuntimeError(f"WhiteboxTools {name} failed (exit {ret})")
+    if not Path(out).exists():
+        raise RuntimeError(f"WhiteboxTools {name} returned 0 but output missing: {out}")
+
+
 # --- Individual derivative functions (each runs a native subprocess) ---
 # Each returns (output_path, elapsed_seconds) for profiling.
 # These run in child processes via ProcessPoolExecutor, so they can't
@@ -78,43 +86,44 @@ def compute_roughness(dem: str, out: str) -> str:
 @_timed_derivative
 def compute_svf(dem: str, out: str) -> str:
     wbt = _get_wbt()
-    # WBT method name varies by version
     if hasattr(wbt, 'sky_view_factor'):
-        wbt.sky_view_factor(dem, out)
+        ret = wbt.sky_view_factor(dem, out)
     elif hasattr(wbt, 'viewshed'):
-        # Fallback: use multidirectional hillshade as SVF proxy
-        wbt.multidirectional_hillshade(dem, out)
+        ret = wbt.multidirectional_hillshade(dem, out)
     else:
         raise RuntimeError("WhiteboxTools has no sky_view_factor or suitable alternative")
+    _wbt_check(ret, "sky_view_factor", out)
     return out
 
 
 @_timed_derivative
 def compute_lrm(dem: str, out: str, kernel: int = 100) -> str:
     wbt = _get_wbt()
-    # WBT method name varies by version
     if hasattr(wbt, 'deviation_from_mean'):
-        wbt.deviation_from_mean(dem, out, filterx=kernel, filtery=kernel)
+        ret = wbt.deviation_from_mean(dem, out, filterx=kernel, filtery=kernel)
     elif hasattr(wbt, 'dev_from_mean_elev'):
-        wbt.dev_from_mean_elev(dem, out, filterx=kernel, filtery=kernel)
+        ret = wbt.dev_from_mean_elev(dem, out, filterx=kernel, filtery=kernel)
     elif hasattr(wbt, 'diff_from_mean_elev'):
-        wbt.diff_from_mean_elev(dem, out, filterx=kernel, filtery=kernel)
+        ret = wbt.diff_from_mean_elev(dem, out, filterx=kernel, filtery=kernel)
     else:
         raise RuntimeError("WhiteboxTools has no deviation_from_mean or suitable alternative")
+    _wbt_check(ret, "lrm", out)
     return out
 
 
 @_timed_derivative
 def compute_profile_curvature(dem: str, out: str) -> str:
     wbt = _get_wbt()
-    wbt.profile_curvature(dem, out)
+    ret = wbt.profile_curvature(dem, out)
+    _wbt_check(ret, "profile_curvature", out)
     return out
 
 
 @_timed_derivative
 def compute_plan_curvature(dem: str, out: str) -> str:
     wbt = _get_wbt()
-    wbt.plan_curvature(dem, out)
+    ret = wbt.plan_curvature(dem, out)
+    _wbt_check(ret, "plan_curvature", out)
     return out
 
 
@@ -136,7 +145,8 @@ def compute_fill_difference(dem: str, filled: str, out: str) -> str:
 @_timed_derivative
 def fill_depressions(dem: str, out: str) -> str:
     wbt = _get_wbt()
-    wbt.fill_depressions(dem, out)
+    ret = wbt.fill_depressions(dem, out)
+    _wbt_check(ret, "fill_depressions", out)
     return out
 
 
@@ -221,11 +231,14 @@ def compute_all_derivatives(
             name, out_path = futures[future]
             try:
                 _result_path, elapsed_s = future.result()
-                results[name] = out_path
-                timings.append((name, elapsed_s))
-                log.info("derivative_done", name=name, elapsed_s=round(elapsed_s, 3))
-                if profiler:
-                    profiler.record(name, elapsed_s, parent="derivatives")
+                if out_path.exists():
+                    results[name] = out_path
+                    timings.append((name, elapsed_s))
+                    log.info("derivative_done", name=name, elapsed_s=round(elapsed_s, 3))
+                    if profiler:
+                        profiler.record(name, elapsed_s, parent="derivatives")
+                else:
+                    log.error("derivative_missing", name=name, path=str(out_path), elapsed_s=round(elapsed_s, 3))
             except Exception as e:
                 log.error("derivative_failed", name=name, error=str(e))
 
