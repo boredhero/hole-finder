@@ -48,10 +48,6 @@ export async function cancelJob(id: string) {
   return fetchJson<any>(`/jobs/${id}/cancel`, { method: 'POST' });
 }
 
-export async function getRegions() {
-  return fetchJson<any>('/regions');
-}
-
 export async function getGroundTruth(params?: {
   west?: number; south?: number; east?: number; north?: number;
 }) {

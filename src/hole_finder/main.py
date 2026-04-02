@@ -48,7 +48,6 @@ def create_app() -> FastAPI:
         geocode,
         jobs,
         raster_tiles,
-        regions,
         tiles,
         validation,
         websocket,
@@ -58,8 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(comments.router, prefix="/api")
     app.include_router(jobs.router, prefix="/api")
     app.include_router(datasets.router, prefix="/api")
-    app.include_router(regions.router, prefix="/api")
-    app.include_router(validation.router, prefix="/api")
+app.include_router(validation.router, prefix="/api")
     app.include_router(exports.router, prefix="/api")
     app.include_router(tiles.router, prefix="/api")
     app.include_router(raster_tiles.router, prefix="/api")

@@ -5,12 +5,6 @@ import { Loader2, Play, X, PenTool, Clock, CheckCircle2, AlertCircle, Ban, MapPi
 import type { Job } from '../../types';
 
 const CONFIGS = ['sinkhole_survey', 'cave_hunting', 'mine_detection', 'salt_dome_detection', 'lava_tube_detection'];
-const REGIONS = [
-  'western_pa', 'eastern_pa', 'west_virginia', 'eastern_ohio', 'upstate_ny',
-  'western_nc', 'western_md', 'western_ma',
-  'south_louisiana', 'north_louisiana',
-  'northern_ca_lava', 'sierra_nevada', 'southern_ca_desert',
-];
 
 export default function JobPanel() {
   const { data: jobs = [], isLoading } = useJobs();
@@ -18,19 +12,15 @@ export default function JobPanel() {
   const cancelJob = useCancelJob();
   const setDrawingAOI = useStore((s) => s.setDrawingAOI);
   const drawnAOI = useStore((s) => s.drawnAOI);
-  const [region, setRegion] = useState(REGIONS[0]);
   const [config, setConfig] = useState(CONFIGS[0]);
-  const [inputMode, setInputMode] = useState<'region' | 'draw' | 'pin'>('region');
+  const [inputMode, setInputMode] = useState<'draw' | 'pin'>('pin');
   const [pinLat, setPinLat] = useState('');
   const [pinLon, setPinLon] = useState('');
-  const [pinRadius, setPinRadius] = useState(2); // km
-
+  const [pinRadius, setPinRadius] = useState(2);
   const activeJobs = jobs.filter((j: Job) => j.status === 'RUNNING' || j.status === 'PENDING');
   const completedJobs = jobs.filter((j: Job) => j.status !== 'RUNNING' && j.status !== 'PENDING');
-
   return (
     <div className="flex flex-col gap-5 p-6">
-      {/* Active jobs — always visible at top */}
       {activeJobs.length > 0 && (
         <section>
           <h3 className="text-sm font-semibold uppercase tracking-wider text-amaranth-400 mb-3 flex items-center gap-2">
@@ -44,13 +34,11 @@ export default function JobPanel() {
                   <StatusBadge status={job.status} />
                 </div>
                 <div className="h-3 bg-slate-700 rounded overflow-hidden mb-2">
-                  <div className="h-full bg-hotpink-500 rounded transition-all duration-500 ease-out"
-                    style={{ width: `${Math.max(job.progress, 2)}%` }} />
+                  <div className="h-full bg-hotpink-500 rounded transition-all duration-500 ease-out" style={{ width: `${Math.max(job.progress, 2)}%` }} />
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-mono text-amaranth-300">{job.progress.toFixed(0)}%</span>
-                  <button onClick={() => cancelJob.mutate(job.id)}
-                    className="text-red-400 hover:text-red-300 text-sm flex items-center gap-1">
+                  <button onClick={() => cancelJob.mutate(job.id)} className="text-red-400 hover:text-red-300 text-sm flex items-center gap-1">
                     <X size={14} /> Cancel
                   </button>
                 </div>
@@ -59,16 +47,9 @@ export default function JobPanel() {
           </div>
         </section>
       )}
-
-      {/* Submit new job */}
       <section>
         <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">New Job</h3>
-
         <div className="flex gap-2 mb-4">
-          <button onClick={() => { setInputMode('region'); setDrawingAOI(false); }}
-            className={`flex-1 text-sm py-3 px-3 rounded font-medium transition-colors ${inputMode === 'region' ? 'bg-burgundy-500 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
-            Region
-          </button>
           <button onClick={() => { setInputMode('pin'); setDrawingAOI(false); }}
             className={`flex-1 text-sm py-3 px-3 rounded font-medium flex items-center justify-center gap-1.5 transition-colors ${inputMode === 'pin' ? 'bg-burgundy-500 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
             <MapPin size={14} /> Pin
@@ -78,13 +59,6 @@ export default function JobPanel() {
             <PenTool size={14} /> Draw
           </button>
         </div>
-
-        {inputMode === 'region' && (
-          <select value={region} onChange={(e) => setRegion(e.target.value)}
-            className="w-full bg-slate-800 border border-slate-600 rounded text-sm p-3 text-slate-200 mb-3">
-            {REGIONS.map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
-          </select>
-        )}
         {inputMode === 'pin' && (
           <div className="flex flex-col gap-2 mb-3">
             <div className="flex gap-2">
@@ -106,12 +80,10 @@ export default function JobPanel() {
             {drawnAOI ? 'AOI drawn on map' : 'Draw polygon on map...'}
           </div>
         )}
-
         <select value={config} onChange={(e) => setConfig(e.target.value)}
           className="w-full bg-slate-800 border border-slate-600 rounded text-sm p-3 text-slate-200 mb-3">
           {CONFIGS.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}
         </select>
-
         <button
           onClick={() => {
             const body: any = { job_type: 'full_pipeline', pass_config: config };
@@ -121,12 +93,9 @@ export default function JobPanel() {
               const lat = parseFloat(pinLat);
               const lon = parseFloat(pinLon);
               const r = pinRadius / 111.32;
-              body.bbox = {
-                type: 'Polygon',
-                coordinates: [[[lon-r, lat-r], [lon+r, lat-r], [lon+r, lat+r], [lon-r, lat+r], [lon-r, lat-r]]],
-              };
-            } else {
-              body.region_name = region;
+              body.bbox = { type: 'Polygon', coordinates: [[[lon-r, lat-r], [lon+r, lat-r], [lon+r, lat+r], [lon-r, lat+r], [lon-r, lat-r]]] };
+              body.center_lat = lat;
+              body.center_lon = lon;
             }
             createJob.mutate(body);
             setDrawingAOI(false);
@@ -137,8 +106,6 @@ export default function JobPanel() {
           Submit Job
         </button>
       </section>
-
-      {/* Completed jobs */}
       {completedJobs.length > 0 && (
         <section>
           <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">
@@ -153,15 +120,11 @@ export default function JobPanel() {
                 </div>
                 {job.result_summary && (
                   <div className="text-sm text-slate-500 mt-1">
-                    {(job.result_summary as any).total_detections != null &&
-                      `${(job.result_summary as any).total_detections} detections`}
-                    {(job.result_summary as any).tiles_downloaded != null &&
-                      ` · ${(job.result_summary as any).tiles_downloaded} tiles`}
+                    {(job.result_summary as any).total_detections != null && `${(job.result_summary as any).total_detections} detections`}
+                    {(job.result_summary as any).tiles_downloaded != null && ` · ${(job.result_summary as any).tiles_downloaded} tiles`}
                   </div>
                 )}
-                {job.error_message && (
-                  <div className="text-sm text-red-400 mt-1 truncate">{job.error_message}</div>
-                )}
+                {job.error_message && (<div className="text-sm text-red-400 mt-1 truncate">{job.error_message}</div>)}
                 <div className="text-xs text-slate-600 mt-1 font-mono">{job.id.slice(0, 8)}</div>
               </div>
             ))}

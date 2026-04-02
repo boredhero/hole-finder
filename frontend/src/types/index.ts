@@ -35,12 +35,6 @@ export interface Job {
   created_at?: string;
 }
 
-export interface Region {
-  name: string;
-  description?: string;
-  geometry: GeoJSON.Geometry;
-}
-
 export interface DetectionFilters {
   featureTypes: FeatureType[];
   confidenceRange: [number, number];
