@@ -76,7 +76,7 @@ async def create_job(
         job_type=job_type,
         status=JobStatusEnum.PENDING,
         region=region_geom,
-        config={"pass_config": body.pass_config, "region_name": body.region_name},
+        config={"pass_config": body.pass_config},
         progress=0.0,
     )
     db.add(job)
@@ -94,7 +94,6 @@ async def create_job(
 
         task = run_full_pipeline.delay(
             job_id=str(job.id),
-            region_name=body.region_name,
             pass_config=body.pass_config,
             bbox_geojson=bbox_geojson,
         )
@@ -202,7 +201,6 @@ async def consumer_scan(
 
         task = run_full_pipeline.delay(
             job_id=str(job.id),
-            region_name=None,
             pass_config="sinkhole_survey",
             bbox_geojson=bbox_geojson,
         )

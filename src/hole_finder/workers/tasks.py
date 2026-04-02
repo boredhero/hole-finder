@@ -222,13 +222,11 @@ def run_detection(self, dem_path: str, derivative_paths: dict, pass_config_name:
 
 
 @app.task(bind=True, queue="detect")
-def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: str, bbox_geojson: dict | None = None):
+def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
     """Full end-to-end: discover tiles → download → process → detect → store.
 
     This is what gets called when a user submits a job from the UI.
-    Each invocation gets its own PipelineProfiler (process-local, no
-    cross-worker sharing). The profiler summary is stored in the job's
-    result_summary for inspection.
+    Source resolution: bbox center → FCC reverse geocode → state → sources.
     """
     from hole_finder.db.models import Job, JobStatus
     from hole_finder.ingest.manager import get_source
@@ -261,52 +259,35 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
 
         # Discover tiles
         with profiler.stage("tile_discovery") as ctx:
-            if region_name:
-                from hole_finder.ingest.manager import discover_region
-                tiles = asyncio.run(discover_region(region_name))
-            elif bbox_geojson:
-                from shapely.geometry import shape
-                from hole_finder.ingest.manager import get_sources_for_bbox
-                bbox = shape(bbox_geojson)
-                tiles = []
-                bbox_source_used = "usgs_3dep"
-                async def _discover():
-                    nonlocal bbox_source_used
-                    sources_to_try = get_sources_for_bbox(bbox)
-                    for src_name in sources_to_try:
-                        src = get_source(src_name)
-                        try:
-                            async for t in src.discover_tiles(bbox):
-                                tiles.append(t)
-                        except Exception as e:
-                            log.warning("bbox_source_failed", source=src_name, error=str(e))
-                        if tiles:
-                            bbox_source_used = src_name
-                            log.info("bbox_source_resolved", source=src_name, tiles=len(tiles))
-                            break
-                asyncio.run(_discover())
-            else:
-                _update_job("FAILED", 0, "No region or bbox specified")
-                return
+            from shapely.geometry import shape
+            from hole_finder.ingest.manager import discover_tiles_for_bbox
+            bbox = shape(bbox_geojson)
+            centroid = bbox.centroid
+            # Get center from job config (more accurate than centroid for non-square bboxes)
+            async def _get_center():
+                async with _async_session() as session:
+                    job = await session.get(Job, UUID(job_id))
+                    if job and job.config:
+                        return job.config.get("center_lat", centroid.y), job.config.get("center_lon", centroid.x)
+                return centroid.y, centroid.x
+            center_lat, center_lon = asyncio.run(_get_center())
+            tiles, source_used = asyncio.run(discover_tiles_for_bbox(bbox, center_lat, center_lon))
             ctx["tiles_found"] = len(tiles)
 
         if not tiles:
-            _update_job("FAILED", 0, "No LiDAR data available for this area. Try a different location — coverage varies by region.", summary={"tiles": 0, "detections": 0})
+            _update_job("FAILED", 0, "No LiDAR data available for this area. Try a different location — coverage varies.", summary={"tiles": 0, "detections": 0})
             return
 
-        # Clear stale detections in scan area now that we know tiles exist
-        if bbox_geojson:
-            from shapely.geometry import shape as _shape
-            _bbox = _shape(bbox_geojson)
-            b = _bbox.bounds
-            async def _clear_stale():
-                async with _async_session() as session:
-                    from sqlalchemy import text
-                    await session.execute(text("DELETE FROM detections WHERE ST_Within(geometry, ST_MakeEnvelope(:w, :s, :e, :n, 4326))"), {"w": b[0], "s": b[1], "e": b[2], "n": b[3]})
-                    await session.commit()
-            asyncio.run(_clear_stale())
+        # Clear stale detections in scan area
+        b = bbox.bounds
+        async def _clear_stale():
+            async with _async_session() as session:
+                from sqlalchemy import text
+                await session.execute(text("DELETE FROM detections WHERE ST_Within(geometry, ST_MakeEnvelope(:w, :s, :e, :n, 4326))"), {"w": b[0], "s": b[1], "e": b[2], "n": b[3]})
+                await session.commit()
+        asyncio.run(_clear_stale())
 
-        source_name = bbox_source_used if bbox_geojson else region_name or "unknown"
+        source_name = source_used
         _update_job("RUNNING", 10, f"Downloading {len(tiles)} tiles", stage="downloading",
                      summary={"stage": "downloading", "source": source_name})
 
@@ -322,7 +303,7 @@ def run_full_pipeline(self, job_id: str, region_name: str | None, pass_config: s
         tile_limit = min(len(tiles), config_limit)
         downloaded = []
         with profiler.stage("tile_downloads", tile_limit=tile_limit) as ctx:
-            dl_source_name = bbox_source_used if bbox_geojson else "usgs_3dep"
+            dl_source_name = source_used
             source = get_source(dl_source_name)
             dest = settings.raw_dir / dl_source_name
 

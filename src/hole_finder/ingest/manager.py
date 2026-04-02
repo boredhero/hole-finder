@@ -1,7 +1,12 @@
-"""IngestManager — orchestrates tile discovery and download across data sources."""
+"""IngestManager — orchestrates tile discovery and download across data sources.
+
+Source resolution: coordinates → FCC reverse geocode → state code → sources.
+No region polygons needed for bbox/zip searches.
+"""
 
 from pathlib import Path
 
+import httpx
 from shapely.geometry import Polygon, shape
 
 from hole_finder.config import settings
@@ -36,6 +41,20 @@ SOURCE_REGISTRY: dict[str, type[DataSource]] = {
     "ct": CTLidarSource,
 }
 
+# State code → state-specific LiDAR sources (beyond usgs_3dep/tnm)
+STATE_SOURCES: dict[str, list[str]] = {
+    "PA": ["pasda"],
+    "WV": ["wv"],
+    "NY": ["ny"],
+    "OH": ["oh"],
+    "NC": ["nc"],
+    "MD": ["md"],
+    "VA": ["va"],
+    "KY": ["ky"],
+    "NJ": ["nj"],
+    "CT": ["ct"],
+}
+
 
 def get_source(name: str) -> DataSource:
     """Get a data source instance by name."""
@@ -44,80 +63,53 @@ def get_source(name: str) -> DataSource:
     return SOURCE_REGISTRY[name]()
 
 
-def get_sources_for_region(region_name: str) -> list[str]:
-    """Determine which data sources to use for a named region."""
-    region_sources = {
-        "western_pa": ["usgs_3dep", "pasda"],
-        "eastern_pa": ["usgs_3dep", "pasda"],
-        "west_virginia": ["usgs_3dep", "wv"],
-        "eastern_ohio": ["usgs_3dep", "oh"],
-        "upstate_ny": ["usgs_3dep", "ny"],
-        "western_nc": ["usgs_3dep", "nc"],
-        "western_md": ["usgs_3dep", "md"],
-        "shenandoah_valley": ["usgs_3dep", "va"],
-        "central_ky_karst": ["usgs_3dep", "ky"],
-        "nw_nj_karst": ["usgs_3dep", "nj"],
-        "western_ct": ["usgs_3dep", "ct"],
-        "middle_tn_karst": ["usgs_3dep", "tnm"],
-        "east_tn_karst": ["usgs_3dep", "tnm"],
-        "southern_in_karst": ["usgs_3dep", "tnm"],
-        "western_vt": ["usgs_3dep", "tnm"],
-        "white_mountains_nh": ["usgs_3dep", "tnm"],
-        "coastal_me": ["usgs_3dep", "tnm"],
-        "rhode_island": ["usgs_3dep", "tnm"],
-        "delaware": ["usgs_3dep", "tnm"],
-        "western_ma": ["usgs_3dep"],
-        "south_louisiana": ["usgs_3dep"],
-        "north_louisiana": ["usgs_3dep"],
-        "northern_ca_lava": ["usgs_3dep"],
-        "sierra_nevada": ["usgs_3dep"],
-        "southern_ca_desert": ["usgs_3dep"],
-    }
-    return region_sources.get(region_name, ["usgs_3dep"])
+def resolve_state(lat: float, lon: float) -> str | None:
+    """Reverse geocode lat/lon to US state code via FCC Area API.
+    Returns 2-letter state code (e.g. 'PA', 'NC') or None if outside US."""
+    try:
+        resp = httpx.get(
+            "https://geo.fcc.gov/api/census/area",
+            params={"lat": lat, "lon": lon, "format": "json"},
+            timeout=5.0,
+        )
+        resp.raise_for_status()
+        results = resp.json().get("results", [])
+        if results:
+            return results[0].get("state_code")
+    except Exception as e:
+        log.warning("fcc_geocode_failed", lat=lat, lon=lon, error=str(e))
+    return None
 
 
-def get_sources_for_bbox(bbox: Polygon) -> list[str]:
-    """Return data sources to try for a bbox search.
-    Always usgs_3dep first (STAC, fast), then tnm (universal US fallback).
-    Region polygons are NOT used — tnm covers the entire US."""
-    return ["usgs_3dep", "tnm"]
+def get_sources_for_location(lat: float, lon: float) -> list[str]:
+    """Determine data sources for a location: usgs_3dep first, then any
+    state-specific source, then tnm as universal US fallback."""
+    sources = ["usgs_3dep"]
+    state = resolve_state(lat, lon)
+    if state:
+        log.info("state_resolved", state=state, lat=round(lat, 4), lon=round(lon, 4))
+        for s in STATE_SOURCES.get(state, []):
+            sources.append(s)
+    sources.append("tnm")
+    return sources
 
 
-def load_region_bbox(region_name: str) -> Polygon:
-    """Load a region's bounding polygon from the configs/regions/ GeoJSON."""
-    import json
-    region_file = Path(__file__).parent.parent.parent.parent / "configs" / "regions" / f"{region_name}.geojson"
-    if not region_file.exists():
-        raise FileNotFoundError(f"Region file not found: {region_file}")
-    with open(region_file) as f:
-        data = json.load(f)
-    # Support both Feature and FeatureCollection
-    if data.get("type") == "FeatureCollection":
-        geom = data["features"][0]["geometry"]
-    elif data.get("type") == "Feature":
-        geom = data["geometry"]
-    else:
-        geom = data
-    return shape(geom)
-
-
-async def discover_region(region_name: str) -> list[TileInfo]:
-    """Discover all available tiles for a region across relevant sources."""
-    bbox = load_region_bbox(region_name)
-    source_names = get_sources_for_region(region_name)
-    all_tiles = []
-
-    for source_name in source_names:
-        source = get_source(source_name)
-        log.info("discovering_tiles", source=source_name, region=region_name)
+async def discover_tiles_for_bbox(bbox: Polygon, lat: float, lon: float) -> tuple[list[TileInfo], str]:
+    """Discover tiles for a bbox, trying sources in order until one returns results.
+    Returns (tiles, source_name_used)."""
+    sources = get_sources_for_location(lat, lon)
+    for src_name in sources:
+        src = get_source(src_name)
+        tiles = []
         try:
-            async for tile in source.discover_tiles(bbox):
-                all_tiles.append(tile)
+            async for t in src.discover_tiles(bbox):
+                tiles.append(t)
         except Exception as e:
-            log.error("discovery_failed", source=source_name, error=str(e))
-
-    log.info("discovery_complete", region=region_name, total_tiles=len(all_tiles))
-    return all_tiles
+            log.warning("source_discovery_failed", source=src_name, error=str(e))
+        if tiles:
+            log.info("source_resolved", source=src_name, tiles=len(tiles))
+            return tiles, src_name
+    return [], "none"
 
 
 async def download_tiles(
@@ -129,7 +121,6 @@ async def download_tiles(
     source = get_source(source_name)
     if dest_dir is None:
         dest_dir = settings.raw_dir / source_name
-
     paths = []
     for tile in tiles:
         try:
@@ -137,5 +128,4 @@ async def download_tiles(
             paths.append(path)
         except Exception as e:
             log.error("download_failed", tile=tile.source_id, error=str(e))
-
     return paths

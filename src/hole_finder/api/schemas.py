@@ -52,7 +52,6 @@ class DetectionDetail(BaseModel):
 
 class JobCreate(BaseModel):
     job_type: str = "full_pipeline"
-    region_name: str | None = None
     bbox: dict | None = None  # GeoJSON geometry
     pass_config: str = "sinkhole_survey"  # TOML config name
 
@@ -104,14 +103,6 @@ class GroundTruthSiteOut(BaseModel):
     lon: float
     source: str
     metadata: dict | None = None
-
-
-# --- Region schemas ---
-
-class RegionOut(BaseModel):
-    name: str
-    description: str | None = None
-    geometry: dict
 
 
 # --- Dataset schemas ---

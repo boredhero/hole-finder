@@ -6,15 +6,13 @@ import SettingsPanel from '../components/Explore/SettingsPanel';
 import ProcessingScreen from '../components/Explore/ProcessingScreen';
 import ResultsSplash from '../components/Explore/ResultsSplash';
 import SwipeCard from '../components/Explore/SwipeCard';
-import { useRegions } from '../hooks/useRegions';
 import { useJobProgress } from '../hooks/useJobProgress';
 import { useStore } from '../store';
 import { geocodeZip, getDetections, startConsumerScan, warmTerrainCache } from '../api/client';
-import { geometryToBbox, formatRegionName } from '../utils';
-import { Locate, Map as MapIcon, Search, ArrowLeft, Settings2, Loader2, AlertCircle, MapPin } from 'lucide-react';
+import { Locate, Search, Settings2, Loader2, AlertCircle, MapPin } from 'lucide-react';
 import type { Detection } from '../types';
 
-type Phase = 'splash' | 'regionPicker' | 'processing' | 'results' | 'tour' | 'explore';
+type Phase = 'splash' | 'processing' | 'results' | 'tour' | 'explore';
 
 export default function LandingPage() {
   const [phase, setPhase] = useState<Phase>('splash');
@@ -25,24 +23,19 @@ export default function LandingPage() {
   const [zipError, setZipError] = useState<string | null>(null);
   const [showZipInput, setShowZipInput] = useState(false);
   const [swipeDirection, setSwipeDirection] = useState(1);
-
   const setTargetViewState = useStore((s) => s.setTargetViewState);
   const setUserLocation = useStore((s) => s.setUserLocation);
   const setSearchStale = useStore((s) => s.setSearchStale);
   const setTerrainReady = useStore((s) => s.setTerrainReady);
   const userLocation = useStore((s) => s.userLocation);
-
   const activeJobId = useStore((s) => s.activeJobId);
   const setActiveJobId = useStore((s) => s.setActiveJobId);
   const tourDetections = useStore((s) => s.tourDetections);
   const setTourDetections = useStore((s) => s.setTourDetections);
   const tourIndex = useStore((s) => s.tourIndex);
   const setTourIndex = useStore((s) => s.setTourIndex);
-
-  // Store the scan center so handleProcessingComplete doesn't depend on userLocation timing
   const scanCenter = useRef<{ lat: number; lon: number } | null>(null);
   const jobProgress = useJobProgress(phase === 'processing' ? activeJobId : null);
-
   // Shared flow after getting a location (from geo or zip)
   const handleLocationAcquired = useCallback(async (lat: number, lon: number) => {
     console.log('[HoleFinder] Location acquired:', lat, lon);
@@ -50,7 +43,6 @@ export default function LandingPage() {
     setUserLocation({ lat, lon });
     setTerrainReady(false);
     setTargetViewState({ longitude: lon, latitude: lat, zoom: 14, pitch: 45, bearing: -15 });
-
     try {
       const { job_id } = await startConsumerScan(lat, lon, 10);
       console.log('[HoleFinder] Scan started, job:', job_id);
@@ -62,7 +54,6 @@ export default function LandingPage() {
       setPhase('explore');
     }
   }, [setUserLocation, setTargetViewState, setActiveJobId, setSearchStale, setTerrainReady]);
-
   const handleFindNearMe = useCallback(() => {
     if (!navigator.geolocation) {
       setGeoError("Your browser doesn't support geolocation.");
@@ -88,7 +79,6 @@ export default function LandingPage() {
       { timeout: 10000 },
     );
   }, [handleLocationAcquired]);
-
   const handleZipSubmit = useCallback(async () => {
     if (!/^\d{5}$/.test(zipCode)) {
       setZipError('Enter a valid 5-digit zip code');
@@ -105,40 +95,16 @@ export default function LandingPage() {
       setZipError('Invalid or unrecognized zip code');
     }
   }, [zipCode, handleLocationAcquired]);
-
-  const handlePickRegion = useCallback((geometry: any) => {
-    const bbox = geometryToBbox(geometry);
-    const centerLon = (bbox[0] + bbox[2]) / 2;
-    const centerLat = (bbox[1] + bbox[3]) / 2;
-    const lonSpan = bbox[2] - bbox[0];
-    const zoom = lonSpan > 3 ? 7 : lonSpan > 1 ? 9 : 11;
-    setTargetViewState({ longitude: centerLon, latitude: centerLat, zoom, pitch: 45, bearing: -15 });
-    setTerrainReady(true);
-    setSearchStale(true);
-    setPhase('explore');
-  }, [setTargetViewState, setSearchStale]);
-
-  // Watch for job completion — fetch detections and transition to results/tour
+  // Watch for job completion
   const completionHandled = useRef(false);
   useEffect(() => {
-    if (phase !== 'processing') {
-      completionHandled.current = false;
-      return;
-    }
+    if (phase !== 'processing') { completionHandled.current = false; return; }
     if (completionHandled.current) return;
-
     const status = jobProgress.status;
     if (status !== 'COMPLETED' && status !== 'FAILED') return;
-
     completionHandled.current = true;
     console.log('[HoleFinder] Job finished:', status);
-
-    if (status === 'FAILED') {
-      // ProcessingScreen already shows error UI
-      return;
-    }
-
-    // Fetch detections from the scanned area
+    if (status === 'FAILED') return;
     const center = scanCenter.current;
     if (!center) {
       console.error('[HoleFinder] No scan center — going to explore');
@@ -146,24 +112,14 @@ export default function LandingPage() {
       setPhase('explore');
       return;
     }
-
     const rLat = 10 / 111.32;
     const rLon = 10 / (111.32 * Math.cos(center.lat * Math.PI / 180));
     const west = center.lon - rLon, south = center.lat - rLat;
     const east = center.lon + rLon, north = center.lat + rLat;
-
-    // Warm terrain cache BEFORE loading the map — prevents DOMExceptions
-    // from uncached terrain tiles. Runs in parallel with detection fetch.
     const warmPromise = warmTerrainCache(west, south, east, north)
       .then((res) => { console.log('[HoleFinder] Terrain cache warmed:', res); setTerrainReady(true); })
       .catch((err) => { console.warn('[HoleFinder] Terrain warm failed (non-fatal):', err); setTerrainReady(true); });
-
-    const detectPromise = getDetections({
-      west, south, east, north,
-      min_confidence: 0.5,
-      limit: 50,
-    });
-
+    const detectPromise = getDetections({ west, south, east, north, min_confidence: 0.5, limit: 50 });
     Promise.all([warmPromise, detectPromise]).then(([, data]) => {
       const dets: Detection[] = (data.features || []).map((f: any) => ({
         id: f.id,
@@ -171,7 +127,6 @@ export default function LandingPage() {
         lat: f.geometry.coordinates[1],
         ...f.properties,
       }));
-      // Sort: non-depressions first (caves, mines, sinkholes are more interesting), then by confidence
       dets.sort((a, b) => {
         const aIsDepression = a.feature_type === 'depression' ? 1 : 0;
         const bIsDepression = b.feature_type === 'depression' ? 1 : 0;
@@ -182,7 +137,6 @@ export default function LandingPage() {
       setTourDetections(dets);
       setTourIndex(0);
       setActiveJobId(null);
-
       if (dets.length > 0) {
         setPhase('results');
       } else {
@@ -195,7 +149,6 @@ export default function LandingPage() {
       setPhase('explore');
     });
   }, [phase, jobProgress.status, setTourDetections, setTourIndex, setActiveJobId, setSearchStale, setTargetViewState]);
-
   // Tour navigation
   const handleTourNext = useCallback(() => {
     if (tourIndex < tourDetections.length - 1) {
@@ -206,7 +159,6 @@ export default function LandingPage() {
       setTargetViewState({ longitude: d.lon, latitude: d.lat, zoom: 15, pitch: 45, bearing: -15 });
     }
   }, [tourIndex, tourDetections, setTourIndex, setTargetViewState]);
-
   const handleTourPrev = useCallback(() => {
     if (tourIndex > 0) {
       const prev = tourIndex - 1;
@@ -216,32 +168,17 @@ export default function LandingPage() {
       setTargetViewState({ longitude: d.lon, latitude: d.lat, zoom: 15, pitch: 45, bearing: -15 });
     }
   }, [tourIndex, tourDetections, setTourIndex, setTargetViewState]);
-
   const handleTourExit = useCallback(() => {
-    // Keep tour data — swiper stays in explore phase. User can dismiss it there.
     setSearchStale(true);
     setPhase('explore');
   }, [setSearchStale]);
-
-  // Dismiss swiper in explore (hides cards but doesn't clear data for re-show on search)
   const handleSwiperDismiss = useCallback(() => {
     setTourDetections([]);
     setTourIndex(0);
   }, [setTourDetections, setTourIndex]);
-
   // --- RENDER ---
-
-  // Region picker (no map needed)
-  if (phase === 'regionPicker') {
-    return <RegionPicker onPick={handlePickRegion} onBack={() => setPhase('splash')} />;
-  }
-
-  // Map phases: processing, results, tour, explore
-  // MapView stays mounted across ALL of these to keep the WebGL context alive
-  // and prevent DOMExceptions from stale tile-load callbacks on context destruction.
   const isMapPhase = phase === 'processing' || phase === 'results' || phase === 'tour' || phase === 'explore';
   const filters = useStore((s) => s.filters);
-
   if (isMapPhase) {
     const filteredTour = tourDetections.filter((d) => d.confidence >= filters.confidenceRange[0]);
     const tourDetection = filteredTour[tourIndex];
@@ -250,7 +187,6 @@ export default function LandingPage() {
         <div className="absolute inset-0">
           <MapView />
         </div>
-        {/* Processing: opaque overlay hides map while GL context initializes behind it */}
         {phase === 'processing' && (
           <div className="absolute inset-0 z-20 bg-slate-950">
             <ProcessingScreen
@@ -302,7 +238,6 @@ export default function LandingPage() {
       </div>
     );
   }
-
   // Splash
   return (
     <div className="h-full w-full flex items-center justify-center bg-slate-950 relative">
@@ -311,24 +246,19 @@ export default function LandingPage() {
         className="absolute top-5 right-5 flex items-center gap-2 text-sm text-slate-500 hover:text-slate-300 transition-colors"
       >
         <Settings2 size={16} />
-        Advanced Playground
+        Advanced
       </Link>
-
       <div className="text-center px-8 max-w-xl">
         <h1 className="text-6xl md:text-7xl font-black text-white mb-3 tracking-tight">Hole Finder</h1>
         <p className="text-slate-400 text-lg md:text-xl mb-10 leading-relaxed">
           Discover caves, mines, sinkholes & more hidden in LiDAR terrain data
         </p>
-
-        {/* Geo error */}
         {geoError && (
           <div className="flex items-center gap-3 bg-red-900/30 border border-red-700/50 text-red-300 text-base rounded px-5 py-4 mb-6">
             <AlertCircle size={18} className="flex-shrink-0" />
             {geoError}
           </div>
         )}
-
-        {/* Buttons */}
         <div className="flex flex-col gap-4">
           <button
             onClick={handleFindNearMe}
@@ -370,17 +300,9 @@ export default function LandingPage() {
           {zipError && (
             <p className="text-red-400 text-base">{zipError}</p>
           )}
-          <button
-            onClick={() => setPhase('regionPicker')}
-            className="flex items-center justify-center gap-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-4 px-8 rounded text-lg transition-colors"
-          >
-            <MapIcon size={22} />
-            Pick a Region
-          </button>
         </div>
-
         <p className="text-sm text-slate-600 mt-10">
-          20 states &middot; 25 regions &middot; 36 validation sites
+          LiDAR coverage across the US &middot; 36 validation sites
         </p>
       </div>
     </div>
@@ -402,45 +324,5 @@ function ExploreSearchButton({ onScan }: { onScan: (lat: number, lon: number) =>
       <Search size={16} />
       Search this area
     </button>
-  );
-}
-
-function RegionPicker({ onPick, onBack }: { onPick: (geometry: any) => void; onBack: () => void }) {
-  const { data: regions = [], isLoading } = useRegions();
-
-  return (
-    <div className="h-full w-full bg-slate-950 overflow-y-auto">
-      <div className="max-w-4xl mx-auto px-8 py-10">
-        <div className="flex items-center gap-4 mb-8">
-          <button onClick={onBack} className="text-slate-400 hover:text-white transition-colors">
-            <ArrowLeft size={24} />
-          </button>
-          <h2 className="text-2xl md:text-3xl font-bold text-white">Pick a Region</h2>
-        </div>
-
-        {isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 size={28} className="animate-spin text-slate-500" />
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {regions.map((region) => (
-              <button
-                key={region.name}
-                onClick={() => onPick(region.geometry)}
-                className="text-left bg-slate-800/80 hover:bg-slate-700 border border-slate-700/50 hover:border-slate-600 rounded p-5 transition-all"
-              >
-                <h3 className="text-base font-semibold text-white mb-1.5">
-                  {formatRegionName(region.name)}
-                </h3>
-                {region.description && (
-                  <p className="text-sm text-slate-400 leading-relaxed">{region.description}</p>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
   );
 }
