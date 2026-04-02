@@ -113,7 +113,7 @@ def _scan_dem_bounds() -> dict[str, tuple[float, float, float, float]]:
         return _dem_bounds_cache
 
     import rasterio
-    from pyproj import Transformer
+    from pyproj import CRS as PyprojCRS, Transformer
 
     bounds = {}
     processed_dir = settings.processed_dir
@@ -126,12 +126,26 @@ def _scan_dem_bounds() -> dict[str, tuple[float, float, float, float]]:
             with rasterio.open(dem_path) as src:
                 b = src.bounds
                 crs = src.crs
-                if crs and crs.to_epsg() != 4326:
-                    transformer = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
+                if not crs or crs.to_epsg() == 4326:
+                    west, south, east, north = b.left, b.bottom, b.right, b.top
+                else:
+                    # Handle compound CRS (e.g. UTM + NAVD88 vertical) by
+                    # extracting the horizontal component — pyproj returns inf
+                    # when transforming directly from compound CRS WKT
+                    epsg = crs.to_epsg()
+                    if epsg:
+                        src_crs = f"EPSG:{epsg}"
+                    else:
+                        pcrs = PyprojCRS(crs)
+                        horiz = pcrs.sub_crs_list[0] if pcrs.sub_crs_list else pcrs
+                        src_crs = f"EPSG:{horiz.to_epsg()}" if horiz.to_epsg() else horiz
+                    transformer = Transformer.from_crs(src_crs, "EPSG:4326", always_xy=True)
                     west, south = transformer.transform(b.left, b.bottom)
                     east, north = transformer.transform(b.right, b.top)
-                else:
-                    west, south, east, north = b.left, b.bottom, b.right, b.top
+                    # Sanity check — inf means the transform failed silently
+                    if not all(math.isfinite(v) for v in (west, south, east, north)):
+                        log.warning("dem_bounds_infinite", path=str(dem_path), crs=str(crs)[:80])
+                        continue
                 bounds[str(dem_path)] = (west, south, east, north)
         except Exception as e:
             log.warning("dem_scan_failed", path=str(dem_path), error=str(e))

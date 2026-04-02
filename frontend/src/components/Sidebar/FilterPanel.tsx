@@ -96,6 +96,18 @@ export default function FilterPanel() {
             <span className="text-slate-200">Tile Coverage</span>
           </label>
         </div>
+        {showTileCoverage && (
+          <div className="ml-7 mt-2 flex flex-col gap-1">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: '#eab308' }} />
+              <span className="text-slate-400">LiDAR (custom DEM)</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: '#06b6d4' }} />
+              <span className="text-slate-400">AWS Terrarium (proxy)</span>
+            </div>
+          </div>
+        )}
         {show3DTerrain && (
           <div className="ml-7 mt-2">
             <span className="text-sm text-slate-400">Exaggeration: {terrainExaggeration.toFixed(1)}x</span>
