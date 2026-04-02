@@ -326,6 +326,9 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                                         tile=tile.filename, error=str(e))
                             return None
 
+                # Sort tiles by distance to bbox center so we get radial coverage, not a strip
+                centroid = bbox.centroid
+                tiles.sort(key=lambda t: t.bbox.centroid.distance(centroid))
                 tasks = [_dl(tile, i) for i, tile in enumerate(tiles[:tile_limit])]
                 results = await aio.gather(*tasks)
                 return [r for r in results if r is not None]
@@ -409,8 +412,8 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                 crs_code = tile_result.crs or 32617
                 transformer = Transformer.from_crs(f"EPSG:{crs_code}", "EPSG:4326", always_xy=True)
                 good = [c for c in candidates
-                        if c.score > 0.5
-                        and c.morphometrics.get("area_m2", 0) > 100
+                        if c.score > 0.3
+                        and c.morphometrics.get("area_m2", 0) > 50
                         and c.morphometrics.get("depth_m", 0) > 0.5
                         and (c.morphometrics.get("depth_m", 0)
                              or c.morphometrics.get("lrm_anomaly_m", 0)) < 100]
@@ -562,10 +565,12 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
 
         profile_summary = profiler.log_summary()
 
+        tile_errors = [r["error"] for r in tile_results if "error" in r][:5]
         _update_job("COMPLETED", 100, summary={
             "tiles_discovered": len(tiles),
             "tiles_downloaded": len(downloaded),
             "total_detections": total_detections,
+            "tile_errors": tile_errors if tile_errors else None,
             "profile": profile_summary,
         })
 
