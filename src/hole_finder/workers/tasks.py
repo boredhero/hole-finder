@@ -143,7 +143,7 @@ def run_detection(self, dem_path: str, derivative_paths: dict, pass_config_name:
         with rasterio.open(dem_path) as src:
             dem = src.read(1).astype(np.float32)
             transform = src.transform
-            crs_code = src.crs.to_epsg() or 32617
+            crs_code = (src.crs.to_epsg() if src.crs else None) or 32617
 
         derivs = {}
         total_bytes = dem.nbytes
