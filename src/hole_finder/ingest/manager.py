@@ -96,6 +96,7 @@ def get_sources_for_location(lat: float, lon: float) -> list[str]:
 
 async def discover_tiles_for_bbox(bbox: Polygon, lat: float, lon: float) -> tuple[list[TileInfo], str]:
     """Discover tiles for a bbox, trying sources in order until one returns results.
+    Skips TNM legacy tiles that lack CRS metadata (2001-era data with State Plane coords).
     Returns (tiles, source_name_used)."""
     sources = get_sources_for_location(lat, lon)
     for src_name in sources:
@@ -107,8 +108,18 @@ async def discover_tiles_for_bbox(bbox: Polygon, lat: float, lon: float) -> tupl
         except Exception as e:
             log.warning("source_discovery_failed", source=src_name, error=str(e))
         if tiles:
-            log.info("source_resolved", source=src_name, tiles=len(tiles))
-            return tiles, src_name
+            # TNM can return legacy tiles (pre-2010) with no embedded CRS — these use
+            # unknown State Plane coords and produce garbage results. Filter them out.
+            # Modern TNM tiles (2010+) have proper CRS embedded in the LAZ headers.
+            if src_name == "tnm":
+                before = len(tiles)
+                tiles = [t for t in tiles if t.format == "copc" or (t.acquisition_year and t.acquisition_year >= 2010)]
+                if len(tiles) < before:
+                    log.warning("tnm_legacy_filtered", before=before, after=len(tiles), dropped=before - len(tiles), reason="pre-2010 or unknown-year legacy tiles")
+            if tiles:
+                log.info("source_resolved", source=src_name, tiles=len(tiles))
+                return tiles, src_name
+            log.info("source_empty_after_filter", source=src_name)
     return [], "none"
 
 

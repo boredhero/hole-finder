@@ -63,6 +63,13 @@ class TNMLidarSource(DataSource):
                         continue
                     # Extract a short tile name from the URL
                     tile_name = Path(url).stem
+                    # Parse acquisition year from publication date, title, or URL
+                    import re
+                    pub_date = item.get("publicationDate") or item.get("dateCreated") or ""
+                    year_match = re.search(r'(\d{4})', pub_date)
+                    if not year_match:
+                        year_match = re.search(r'[_/](\d{4})[_/]', url + "/" + title)
+                    acq_year = int(year_match.group(1)) if year_match and 1990 <= int(year_match.group(1)) <= 2030 else None
                     yield TileInfo(
                         source_id=tile_name,
                         filename=f"tnm_{tile_name}.laz",
@@ -70,6 +77,7 @@ class TNMLidarSource(DataSource):
                         bbox=tile_bbox,
                         crs=4326,
                         file_size_bytes=item.get("sizeInBytes"),
+                        acquisition_year=acq_year,
                         format="laz",
                     )
                 total = data.get("total", 0)
