@@ -318,9 +318,11 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                         try:
                             path = await source.download_tile(tile, dest)
                             elapsed = time.perf_counter() - t0
+                            size_bytes = Path(path).stat().st_size if path else 0
                             log.info("tile_downloaded", tile=tile.filename,
-                                     elapsed_s=round(elapsed, 2), index=idx+1)
-                            return str(path)
+                                     elapsed_s=round(elapsed, 2), index=idx+1,
+                                     size_mb=round(size_bytes / 1e6, 1))
+                            return (str(path), size_bytes)
                         except Exception as e:
                             log.warning("tile_download_failed",
                                         tile=tile.filename, error=str(e))
@@ -331,12 +333,17 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                 tiles.sort(key=lambda t: t.bbox.centroid.distance(centroid))
                 tasks = [_dl(tile, i) for i, tile in enumerate(tiles[:tile_limit])]
                 results = await aio.gather(*tasks)
-                return [r for r in results if r is not None]
+                return [(p, s) for p, s in [r for r in results if r is not None]]
 
-            downloaded = asyncio.run(_download_all())
-            _update_job("RUNNING", 40, f"Downloaded {len(downloaded)}/{tile_limit} tiles", stage="analyzing")
+            dl_results = asyncio.run(_download_all())
+            downloaded = [p for p, _ in dl_results]
+            total_download_bytes = sum(s for _, s in dl_results)
+            dl_mb = round(total_download_bytes / 1e6, 1)
+            _update_job("RUNNING", 40, f"Downloaded {len(downloaded)}/{tile_limit} tiles ({dl_mb} MB)", stage="analyzing",
+                         summary={"stage": "analyzing", "source": source_name, "download_mb": dl_mb})
             ctx["downloaded"] = len(downloaded)
             ctx["failed"] = tile_limit - len(downloaded)
+            ctx["download_mb"] = dl_mb
 
         if not downloaded:
             _update_job("FAILED", 40, "No tiles downloaded successfully")
@@ -569,6 +576,7 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
         _update_job("COMPLETED", 100, summary={
             "tiles_discovered": len(tiles),
             "tiles_downloaded": len(downloaded),
+            "download_mb": dl_mb,
             "total_detections": total_detections,
             "tile_errors": tile_errors if tile_errors else None,
             "profile": profile_summary,

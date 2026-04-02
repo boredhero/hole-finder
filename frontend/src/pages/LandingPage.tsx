@@ -193,6 +193,7 @@ export default function LandingPage() {
               progress={jobProgress.progress}
               stage={jobProgress.stage}
               source={jobProgress.source}
+              downloadMb={jobProgress.downloadMb}
               error={jobProgress.status === 'FAILED' ? (jobProgress.error || 'Processing failed') : null}
               onRetry={() => {
                 setActiveJobId(null);

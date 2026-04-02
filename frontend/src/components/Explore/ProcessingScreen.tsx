@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Check, Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
 
 const STAGES = [
   { key: 'discovering', label: 'Downloading terrain data...' },
@@ -155,11 +155,12 @@ interface ProcessingScreenProps {
   progress: number;
   stage: string | null;
   source: string | null;
+  downloadMb: number | null;
   error: string | null;
   onRetry: () => void;
 }
 
-export default function ProcessingScreen({ progress, stage, source, error, onRetry }: ProcessingScreenProps) {
+export default function ProcessingScreen({ progress, stage, source, downloadMb, error, onRetry }: ProcessingScreenProps) {
   const [factIndex, setFactIndex] = useState(() => Math.floor(Math.random() * FUN_FACTS.length));
   const [, setSeenIndices] = useState<Set<number>>(() => new Set());
   const [factVisible, setFactVisible] = useState(true);
@@ -221,40 +222,17 @@ export default function ProcessingScreen({ progress, stage, source, error, onRet
         )}
         {!source && <div className="mb-6" />}
 
-        {/* Stage indicators */}
-        <div className="flex items-center justify-center gap-3 mb-8">
-          {STAGES.map((s, i) => {
-            const isComplete = i < currentStageIdx;
-            const isCurrent = i === currentStageIdx;
-            return (
-              <div key={s.key} className="flex items-center gap-3">
-                <div
-                  className={`w-8 h-8 rounded flex items-center justify-center text-sm font-medium transition-colors ${
-                    isComplete
-                      ? 'bg-green-600 text-white'
-                      : isCurrent
-                        ? 'bg-cherry-500 text-white'
-                        : 'bg-slate-800 text-slate-500'
-                  }`}
-                >
-                  {isComplete ? <Check size={16} /> : i + 1}
-                </div>
-                {i < STAGES.length - 1 && (
-                  <div className={`w-8 h-0.5 ${i < currentStageIdx ? 'bg-green-600' : 'bg-slate-700'}`} />
-                )}
-              </div>
-            );
-          })}
-        </div>
-
         {/* Progress bar */}
-        <div className="w-full h-2 bg-slate-800 rounded overflow-hidden mb-3">
+        <div className="w-full h-3 bg-slate-800 rounded overflow-hidden mb-3">
           <div
             className="h-full bg-hotpink-500 rounded transition-all duration-700 ease-out"
             style={{ width: `${Math.max(progress, 2)}%` }}
           />
         </div>
-        <p className="text-sm text-slate-400 font-mono mb-10">{Math.round(progress)}%</p>
+        <div className="flex items-center justify-between text-sm text-slate-400 font-mono mb-10">
+          <span>{Math.round(progress)}%</span>
+          {downloadMb != null && <span>{downloadMb} MB downloaded</span>}
+        </div>
 
         {/* Fun fact */}
         <div className="h-16 flex items-center justify-center">

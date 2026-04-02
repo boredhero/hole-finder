@@ -122,6 +122,7 @@ export default function JobPanel() {
                   <div className="text-sm text-slate-500 mt-1">
                     {(job.result_summary as any).total_detections != null && `${(job.result_summary as any).total_detections} detections`}
                     {(job.result_summary as any).tiles_downloaded != null && ` · ${(job.result_summary as any).tiles_downloaded} tiles`}
+                    {(job.result_summary as any).download_mb != null && ` · ${(job.result_summary as any).download_mb} MB`}
                   </div>
                 )}
                 {job.error_message && (<div className="text-sm text-red-400 mt-1 truncate">{job.error_message}</div>)}

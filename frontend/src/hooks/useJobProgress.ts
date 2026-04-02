@@ -8,6 +8,7 @@ interface JobProgress {
   source: string | null;
   status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | null;
   totalDetections: number | null;
+  downloadMb: number | null;
   error: string | null;
 }
 
@@ -28,6 +29,7 @@ export function useJobProgress(jobId: string | null): JobProgress {
     source: null,
     status: null,
     totalDetections: null,
+    downloadMb: null,
     error: null,
   });
 
@@ -38,6 +40,7 @@ export function useJobProgress(jobId: string | null): JobProgress {
       source: job.source || null,
       status: job.status?.toUpperCase() || null,
       totalDetections: job.total_detections ?? null,
+      downloadMb: job.download_mb ?? null,
       error: job.error_message || null,
     };
     setState(newState);
@@ -64,7 +67,7 @@ export function useJobProgress(jobId: string | null): JobProgress {
 
   useEffect(() => {
     if (!jobId) {
-      setState({ progress: 0, stage: null, source: null, status: null, totalDetections: null, error: null });
+      setState({ progress: 0, stage: null, source: null, status: null, totalDetections: null, downloadMb: null, error: null });
       return;
     }
 
