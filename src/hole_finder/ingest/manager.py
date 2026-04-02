@@ -6,24 +6,34 @@ from shapely.geometry import Polygon, shape
 
 from hole_finder.config import settings
 from hole_finder.ingest.sources.base import DataSource, TileInfo
+from hole_finder.ingest.sources.ct_lidar import CTLidarSource
+from hole_finder.ingest.sources.ky_lidar import KYLidarSource
 from hole_finder.ingest.sources.md_lidar import MDLidarSource
 from hole_finder.ingest.sources.nc_lidar import NCLidarSource
+from hole_finder.ingest.sources.nj_lidar import NJLidarSource
 from hole_finder.ingest.sources.ny_lidar import NYLidarSource
 from hole_finder.ingest.sources.oh_ogrip import OHOGRIPSource
 from hole_finder.ingest.sources.pasda import PASDASource
+from hole_finder.ingest.sources.tnm_lidar import TNMLidarSource
 from hole_finder.ingest.sources.usgs_3dep import USGS3DEPSource
+from hole_finder.ingest.sources.va_lidar import VALidarSource
 from hole_finder.ingest.sources.wv_lidar import WVLidarSource
 from hole_finder.utils.logging import log
 
 # Registry of all available data sources
 SOURCE_REGISTRY: dict[str, type[DataSource]] = {
     "usgs_3dep": USGS3DEPSource,
+    "tnm": TNMLidarSource,
     "pasda": PASDASource,
     "wv": WVLidarSource,
     "ny": NYLidarSource,
     "oh": OHOGRIPSource,
     "nc": NCLidarSource,
     "md": MDLidarSource,
+    "va": VALidarSource,
+    "ky": KYLidarSource,
+    "nj": NJLidarSource,
+    "ct": CTLidarSource,
 }
 
 
@@ -44,6 +54,18 @@ def get_sources_for_region(region_name: str) -> list[str]:
         "upstate_ny": ["usgs_3dep", "ny"],
         "western_nc": ["usgs_3dep", "nc"],
         "western_md": ["usgs_3dep", "md"],
+        "shenandoah_valley": ["usgs_3dep", "va"],
+        "central_ky_karst": ["usgs_3dep", "ky"],
+        "nw_nj_karst": ["usgs_3dep", "nj"],
+        "western_ct": ["usgs_3dep", "ct"],
+        "middle_tn_karst": ["usgs_3dep", "tnm"],
+        "east_tn_karst": ["usgs_3dep", "tnm"],
+        "southern_in_karst": ["usgs_3dep", "tnm"],
+        "western_vt": ["usgs_3dep", "tnm"],
+        "white_mountains_nh": ["usgs_3dep", "tnm"],
+        "coastal_me": ["usgs_3dep", "tnm"],
+        "rhode_island": ["usgs_3dep", "tnm"],
+        "delaware": ["usgs_3dep", "tnm"],
         "western_ma": ["usgs_3dep"],
         "south_louisiana": ["usgs_3dep"],
         "north_louisiana": ["usgs_3dep"],
@@ -64,6 +86,15 @@ def get_sources_for_bbox(bbox: Polygon) -> list[str]:
         "western_pa": ["pasda"], "eastern_pa": ["pasda"],
         "west_virginia": ["wv"], "eastern_ohio": ["oh"],
         "upstate_ny": ["ny"], "western_nc": ["nc"], "western_md": ["md"],
+        "shenandoah_valley": ["va"],
+        "central_ky_karst": ["ky"],
+        "nw_nj_karst": ["nj"],
+        "western_ct": ["ct"],
+        "middle_tn_karst": ["tnm"], "east_tn_karst": ["tnm"],
+        "southern_in_karst": ["tnm"],
+        "western_vt": ["tnm"],
+        "white_mountains_nh": ["tnm"], "coastal_me": ["tnm"],
+        "rhode_island": ["tnm"], "delaware": ["tnm"],
     }
     for region_name, extra_sources in region_source_map.items():
         try:

@@ -380,7 +380,7 @@ export default function LandingPage() {
         </div>
 
         <p className="text-sm text-slate-600 mt-10">
-          9 states &middot; 13 regions &middot; 36 validation sites
+          20 states &middot; 25 regions &middot; 36 validation sites
         </p>
       </div>
     </div>
