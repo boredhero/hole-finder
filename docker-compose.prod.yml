@@ -78,6 +78,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://hole_finder:${POSTGRES_PASSWORD:-changeme}@db:5432/hole_finder
       REDIS_URL: redis://redis:6379/0
       DATA_DIR: /data/hole-finder
+      PROJ_NETWORK: "OFF"
     volumes:
       - ./configs:/app/configs:ro
       - hole_finder_logs:/app/logs
@@ -99,6 +100,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       DATA_DIR: /data/hole-finder
       HSA_OVERRIDE_GFX_VERSION: "10.3.0"
+      PROJ_NETWORK: "OFF"
     volumes:
       - ./configs:/app/configs:ro
       - hole_finder_logs:/app/logs

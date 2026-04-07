@@ -1,38 +1,22 @@
 """Filter detections that fall on building footprints using OpenStreetMap data.
 
-Uses the Overpass API (free, no auth) to fetch building polygons for a given
-bounding box, then excludes any detection whose centroid falls inside a building.
+Uses the shared Overpass client (retry, mirror rotation, caching, rate limiting)
+to fetch building polygons, then excludes any detection whose centroid falls
+inside a building. Buildings inside cemeteries are kept (mausoleums/crypts don't
+produce false LiDAR anomalies, and real features can exist beneath them).
 """
 
-import httpx
-from shapely.geometry import Point, Polygon, MultiPolygon, shape
+from shapely.geometry import Point, Polygon, MultiPolygon
 from shapely.prepared import prep
 
 from hole_finder.utils.logging import log
+from hole_finder.utils.overpass import query_overpass
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
-
-def _fetch_cemetery_polygons(south: float, west: float, north: float, east: float) -> list[Polygon]:
-    """Fetch OSM cemetery/graveyard areas so buildings inside them can be excluded."""
-    query = f"""
-    [out:json][timeout:15];
-    (
-      way["landuse"="cemetery"]({south},{west},{north},{east});
-      relation["landuse"="cemetery"]({south},{west},{north},{east});
-      way["amenity"="grave_yard"]({south},{west},{north},{east});
-    );
-    out geom;
-    """
-    try:
-        resp = httpx.post(OVERPASS_URL, data={"data": query}, timeout=15.0)
-        resp.raise_for_status()
-    except Exception as e:
-        log.warning("overpass_cemetery_fetch_failed", error=str(e))
-        return []
-    data = resp.json()
+def _parse_polygons_from_elements(elements: list[dict]) -> list[Polygon]:
+    """Extract valid Shapely Polygons from Overpass JSON elements."""
     polygons = []
-    for el in data.get("elements", []):
+    for el in elements:
         if el.get("type") == "way":
             geom = el.get("geometry", [])
             if len(geom) >= 4:
@@ -58,15 +42,26 @@ def _fetch_cemetery_polygons(south: float, west: float, north: float, east: floa
     return polygons
 
 
+def _fetch_cemetery_polygons(south: float, west: float, north: float, east: float) -> list[Polygon]:
+    """Fetch OSM cemetery/graveyard areas so buildings inside them can be excluded."""
+    query = f"""
+    [out:json][timeout:15];
+    (
+      way["landuse"="cemetery"]({south},{west},{north},{east});
+      relation["landuse"="cemetery"]({south},{west},{north},{east});
+      way["amenity"="grave_yard"]({south},{west},{north},{east});
+    );
+    out geom;
+    """
+    data = query_overpass(query, timeout=20.0, query_label="cemeteries")
+    return _parse_polygons_from_elements(data.get("elements", []))
+
+
 def fetch_building_polygons(west: float, south: float, east: float, north: float) -> list[Polygon]:
     """Fetch OSM building footprints for a bounding box via Overpass API.
-
     Returns a list of Shapely Polygons representing building outlines.
-    Buildings inside cemeteries/graveyards are excluded — those structures
-    (mausoleums, crypts, vaults) don't produce false LiDAR anomalies like
-    rooftops do, and real geological features can exist beneath them.
+    Buildings inside cemeteries/graveyards are excluded.
     """
-    # Overpass uses (south, west, north, east) bbox format
     query = f"""
     [out:json][timeout:30];
     (
@@ -74,28 +69,12 @@ def fetch_building_polygons(west: float, south: float, east: float, north: float
     );
     out geom;
     """
-    try:
-        resp = httpx.post(OVERPASS_URL, data={"data": query}, timeout=30.0)
-        resp.raise_for_status()
-    except Exception as e:
-        log.warning("overpass_fetch_failed", error=str(e))
-        return []
-    data = resp.json()
+    data = query_overpass(query, timeout=45.0, query_label="buildings")
     elements = data.get("elements", [])
-    all_buildings = []
-    for el in elements:
-        if el.get("type") != "way":
-            continue
-        geom = el.get("geometry", [])
-        if len(geom) < 4:
-            continue
-        try:
-            coords = [(node["lon"], node["lat"]) for node in geom]
-            poly = Polygon(coords)
-            if poly.is_valid and poly.area > 0:
-                all_buildings.append(poly)
-        except Exception:
-            continue
+    if not elements:
+        log.warning("overpass_no_buildings_returned", bbox=f"{west},{south},{east},{north}")
+        return []
+    all_buildings = _parse_polygons_from_elements(elements)
     # Exclude buildings that sit inside cemetery/graveyard areas
     cemetery_polys = _fetch_cemetery_polygons(south, west, north, east)
     if cemetery_polys:

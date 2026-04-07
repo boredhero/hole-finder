@@ -12,6 +12,7 @@ from pathlib import Path
 
 from hole_finder.config import settings
 from hole_finder.processing.derivatives import compute_all_derivatives, fill_depressions
+from hole_finder.utils.crs import resolve_epsg
 from hole_finder.utils.logging import log
 from hole_finder.utils.perf import PipelineProfiler, get_profiler, new_profiler
 
@@ -84,6 +85,10 @@ def generate_dem_pdal(
         ]
         if target_srs:
             pipeline.append({"type": "filters.reprojection", "out_srs": target_srs})
+        # Fix zeroed return values (LAS 1.4 spec requires >=1) — some sources
+        # (e.g. NC NOAA 2015 Phase 3) have points with NumberOfReturns=0 which
+        # causes SMRF to reject the entire tile. Assign single-return values.
+        pipeline.append({"type": "filters.assign", "value": ["ReturnNumber = 1 WHERE ReturnNumber == 0", "NumberOfReturns = 1 WHERE NumberOfReturns == 0"]})
         pipeline.extend([
             {"type": "filters.smrf", "slope": 0.15, "window": 18, "threshold": 0.5},
             {"type": "filters.range", "limits": "Classification[2:2]"},
@@ -210,13 +215,12 @@ class ProcessingPipeline:
 
     @staticmethod
     def _read_crs(dem_path: Path) -> int:
-        """Read EPSG code from a DEM file, fallback to 32617."""
+        """Read EPSG code from a DEM file via robust compound CRS resolver."""
         try:
-            import rasterio
-            with rasterio.open(dem_path) as src:
-                return (src.crs.to_epsg() if src.crs else None) or 32617
-        except Exception:
-            return 32617
+            return resolve_epsg(dem_path)
+        except ValueError as e:
+            log.error("pipeline_crs_unresolvable", path=str(dem_path), error=str(e))
+            raise
 
     def _load_existing(self, tile_dir: Path, deriv_dir: Path) -> ProcessedTile:
         """Load an already-processed tile from disk."""

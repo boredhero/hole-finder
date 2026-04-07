@@ -7,16 +7,17 @@ import rasterio
 from numpy.typing import NDArray
 from rasterio.transform import Affine
 
+from hole_finder.utils.crs import resolve_epsg
+
 
 def read_dem(path: Path) -> tuple[NDArray[np.float32], Affine, int]:
     """Read a single-band DEM GeoTIFF.
-
     Returns (array, transform, epsg_code).
     """
     with rasterio.open(path) as src:
         dem = src.read(1).astype(np.float32)
         transform = src.transform
-        crs = (src.crs.to_epsg() if src.crs else None) or 32617
+        crs = resolve_epsg(src.crs)
     return dem, transform, crs
 
 

@@ -38,6 +38,7 @@ dependencies = [
     "joblib>=1.3",
     # Data access
     "httpx>=0.27",
+    "httpx-retries>=0.3",
     "pystac-client>=0.8",
     "boto3>=1.34",
     # Config

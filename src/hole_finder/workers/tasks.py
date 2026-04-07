@@ -28,6 +28,7 @@ import rasterio
 from shapely.ops import transform as shapely_transform
 
 from hole_finder.config import settings
+from hole_finder.utils.crs import resolve_epsg
 from hole_finder.utils.logging import log
 from hole_finder.utils.perf import PipelineProfiler, get_profiler, new_profiler
 from hole_finder.workers.celery_app import app
@@ -144,7 +145,7 @@ def run_detection(self, dem_path: str, derivative_paths: dict, pass_config_name:
         with rasterio.open(dem_path) as src:
             dem = src.read(1).astype(np.float32)
             transform = src.transform
-            crs_code = (src.crs.to_epsg() if src.crs else None) or 32617
+            crs_code = resolve_epsg(src.crs)
 
         derivs = {}
         total_bytes = dem.nbytes
@@ -417,10 +418,24 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                     tile_result = pipeline.process_dem_file(input_path)
                 result["process_s"] = round(time.perf_counter() - t0, 2)
                 result["derivatives"] = len(tile_result.derivative_paths)
+                # CRS details logging — track how CRS was resolved for each tile
+                _crs_is_compound = False
+                try:
+                    import rasterio as _rio_check
+                    with _rio_check.open(tile_result.dem_path) as _src_check:
+                        _raw_crs = _src_check.crs
+                        _raw_epsg = _raw_crs.to_epsg() if _raw_crs else None
+                        from pyproj import CRS as _PyprojCRS
+                        _pcrs = _PyprojCRS(_raw_crs) if _raw_crs else None
+                        _crs_is_compound = _pcrs.is_compound if _pcrs else False
+                    log.info("tile_crs_details", tile=Path(tile_path).name, resolved_epsg=tile_result.crs, raw_epsg=_raw_epsg, is_compound=_crs_is_compound, raw_crs=str(_raw_crs)[:100] if _raw_crs else "None")
+                except Exception:
+                    log.info("tile_crs_details", tile=Path(tile_path).name, resolved_epsg=tile_result.crs, raw_epsg="unknown", is_compound=False)
                 log.info("processing_complete", index=i, tile=Path(tile_path).name, process_s=result["process_s"], derivatives=list(tile_result.derivative_paths.keys()), crs=tile_result.crs, dem=str(tile_result.dem_path))
             except Exception as e:
                 log.error("process_tile_failed", tile=tile_path, error=str(e))
                 result["error"] = f"process: {e}"
+                result["error_type"] = "process"
                 return result
 
             # Detect
@@ -433,7 +448,7 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                 )
                 log.info("detection_raw", tile=Path(tile_path).stem, raw_candidates=len(candidates))
 
-                crs_code = tile_result.crs or 32617
+                crs_code = tile_result.crs
                 transformer = Transformer.from_crs(f"EPSG:{crs_code}", "EPSG:4326", always_xy=True)
                 # Sanity check: transform a known point from the DEM bounds
                 import rasterio as _rio
@@ -548,9 +563,14 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
 
                 with _det_lock:
                     total_detections += stored_count
+                # Per-tile quality report
+                log.info("tile_quality_report", tile=Path(tile_path).name, derivatives_ok=len(tile_result.derivative_paths), raw_candidates=len(candidates), filtered=len(good), stored=stored_count, crs=crs_code, overpass_status="ok" if good_with_coords else "skipped_or_empty")
             except Exception as e:
-                log.error("detect_tile_failed", tile=tile_path, error=str(e))
+                _err_str = str(e)
+                _err_type = "crs_infinity" if "infinity" in _err_str else "detect_other"
+                log.error("detect_tile_failed", tile=tile_path, error=_err_str, error_type=_err_type)
                 result["error"] = f"detect: {e}"
+                result["error_type"] = _err_type
 
             # Cleanup: delete raw + intermediate derivatives, keep DEM + hillshade
             freed_bytes = 0
@@ -615,12 +635,24 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
 
         profile_summary = profiler.log_summary()
 
+        # Categorize errors for the pipeline summary
         tile_errors = [r["error"] for r in tile_results if "error" in r][:5]
+        error_types = {}
+        for r in tile_results:
+            if "error_type" in r:
+                etype = r["error_type"]
+                error_types[etype] = error_types.get(etype, 0) + 1
+        tiles_ok = sum(1 for r in tile_results if "error" not in r)
+        tiles_failed = sum(1 for r in tile_results if "error" in r)
+        log.info("pipeline_error_summary", job_id=job_id[:8], tiles_ok=tiles_ok, tiles_failed=tiles_failed, total_detections=total_detections, error_types=error_types if error_types else None)
         _update_job("COMPLETED", 100, summary={
             "tiles_discovered": len(tiles),
             "tiles_downloaded": len(downloaded),
             "download_mb": dl_mb,
             "total_detections": total_detections,
+            "tiles_ok": tiles_ok,
+            "tiles_failed": tiles_failed,
+            "error_types": error_types if error_types else None,
             "tile_errors": tile_errors if tile_errors else None,
             "profile": profile_summary,
         })

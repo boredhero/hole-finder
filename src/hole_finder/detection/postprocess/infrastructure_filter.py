@@ -1,18 +1,18 @@
 """Filter detections that fall on roads, waterways, or railways using OpenStreetMap data.
 
-Uses the Overpass API (free, no auth) to fetch infrastructure polygons/lines
-for a given bounding box, then excludes detections whose centroid falls inside
-a buffered infrastructure feature. Springs are exempt from water filtering.
+Uses the shared Overpass client (retry, mirror rotation, caching, rate limiting)
+to fetch infrastructure polygons/lines for a given bounding box, then excludes
+detections whose centroid falls inside a buffered feature. Springs are exempt
+from water filtering.
 """
 
-import httpx
-from shapely.geometry import LineString, MultiPolygon, Point, Polygon, shape
+from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from shapely.ops import unary_union
 from shapely.prepared import prep
 
 from hole_finder.utils.logging import log
+from hole_finder.utils.overpass import query_overpass
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 # Buffer distances in degrees for line features
 ROAD_BUFFER_DEG = 0.0003   # ~30m — highway cuts are wide
 WATER_BUFFER_DEG = 0.0003  # ~30m — creek/river banks
@@ -23,7 +23,6 @@ def fetch_infrastructure_polygons(
     west: float, south: float, east: float, north: float,
 ) -> dict[str, list[Polygon]]:
     """Fetch OSM roads, waterways, water bodies, and railways via Overpass API.
-
     Returns dict with keys 'roads', 'water', 'railways' → lists of buffered Shapely Polygons.
     """
     bbox = f"{south},{west},{north},{east}"
@@ -38,14 +37,11 @@ def fetch_infrastructure_polygons(
     );
     out geom;
     """
-    try:
-        resp = httpx.post(OVERPASS_URL, data={"data": query}, timeout=45.0)
-        resp.raise_for_status()
-    except Exception as e:
-        log.warning("overpass_infrastructure_fetch_failed", error=str(e))
-        return {"roads": [], "water": [], "railways": []}
-    data = resp.json()
+    data = query_overpass(query, timeout=60.0, query_label="infrastructure")
     elements = data.get("elements", [])
+    if not elements:
+        log.warning("overpass_no_infrastructure_returned", bbox=f"{west},{south},{east},{north}")
+        return {"roads": [], "water": [], "railways": []}
     roads: list[Polygon] = []
     water: list[Polygon] = []
     railways: list[Polygon] = []

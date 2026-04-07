@@ -1,5 +1,11 @@
 """Celery application factory."""
 
+# Disable PROJ network BEFORE any pyproj/rasterio import — prevents grid-based
+# NAD83→WGS84 pipelines that return inf in forked Celery workers.
+# The simple geocentric transform (~4m accuracy) is more than sufficient for LiDAR.
+import pyproj.network
+pyproj.network.set_network_enabled(False)
+
 from celery import Celery
 
 from hole_finder.config import settings

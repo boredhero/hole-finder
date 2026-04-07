@@ -10,6 +10,7 @@ import rasterio
 from hole_finder.detection.base import Candidate, DetectionPass, PassInput
 from hole_finder.detection.fusion import ResultFuser
 from hole_finder.detection.registry import PassRegistry
+from hole_finder.utils.crs import resolve_epsg
 from hole_finder.utils.logging import log
 from hole_finder.utils.perf import get_profiler
 
@@ -66,7 +67,7 @@ class PassRunner:
         with rasterio.open(dem_path) as src:
             dem = src.read(1).astype(np.float32)
             transform = src.transform
-            crs = (src.crs.to_epsg() if src.crs else None) or 32617
+            crs = resolve_epsg(src.crs)
         dem_io_elapsed = time.perf_counter() - t0
 
         log.info(

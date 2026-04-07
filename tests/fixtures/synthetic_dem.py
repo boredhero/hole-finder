@@ -68,7 +68,8 @@ def make_pass_input_from_geotiff(
     with rasterio.open(dem_path) as src:
         dem = src.read(1).astype(np.float32)
         transform = src.transform
-        crs = src.crs.to_epsg() or 32617
+        from hole_finder.utils.crs import resolve_epsg
+        crs = resolve_epsg(src.crs)
 
     derivatives = {}
     if derivative_paths:

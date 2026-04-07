@@ -21,19 +21,33 @@ def _run(cmd: list[str], timeout: int = 300) -> None:
         raise RuntimeError(f"{cmd[0]} failed (exit {result.returncode}): {result.stderr[:500]}")
 
 
-def _get_wbt():
+def _get_wbt(verbose: bool = False):
     """Get a WhiteboxTools instance."""
     import whitebox
     wbt = whitebox.WhiteboxTools()
-    wbt.set_verbose_mode(False)
+    wbt.set_verbose_mode(verbose)
     return wbt
 
 
-def _wbt_check(ret: int, name: str, out: str) -> None:
-    """Check WBT return code and verify output file exists."""
+def _wbt_check(ret: int, name: str, out: str, dem_input: str | None = None) -> None:
+    """Check WBT return code and verify output file exists.
+    On ghost output (rc=0 but no file), re-runs with verbose to capture diagnostics.
+    """
     if ret != 0:
         raise RuntimeError(f"WhiteboxTools {name} failed (exit {ret})")
     if not Path(out).exists():
+        diag = ""
+        if dem_input:
+            try:
+                import io, contextlib
+                wbt_verbose = _get_wbt(verbose=True)
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    getattr(wbt_verbose, name)(dem_input, out)
+                diag = buf.getvalue()[:1000]
+            except Exception as e:
+                diag = f"verbose re-run failed: {e}"
+        log.error("wbt_ghost_output", tool=name, output=out, input=dem_input, verbose_output=diag)
         raise RuntimeError(f"WhiteboxTools {name} returned 0 but output missing: {out}")
 
 
@@ -146,7 +160,18 @@ def compute_fill_difference(dem: str, filled: str, out: str) -> str:
 def fill_depressions(dem: str, out: str) -> str:
     wbt = _get_wbt()
     ret = wbt.fill_depressions(dem, out)
-    _wbt_check(ret, "fill_depressions", out)
+    try:
+        _wbt_check(ret, "fill_depressions", out, dem_input=dem)
+    except RuntimeError:
+        # GDAL fallback: use gdal_fillnodata as a rough approximation.
+        # Less accurate than WBT depression filling but prevents total tile loss.
+        log.warning("fill_depressions_gdal_fallback", dem=dem, out=out)
+        import shutil
+        shutil.copy2(dem, out)
+        result = subprocess.run(["gdal_fillnodata.py", "-md", "100", "-si", "1", "-co", "COMPRESS=DEFLATE", "-co", "TILED=YES", out], capture_output=True, text=True, timeout=300)
+        if result.returncode != 0 or not Path(out).exists():
+            raise RuntimeError(f"GDAL fill_depressions fallback also failed (exit {result.returncode}): {result.stderr[:300]}")
+        log.info("fill_depressions_gdal_ok", out=out)
     return out
 
 
