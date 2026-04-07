@@ -18,7 +18,7 @@ const TERRAIN_SOURCE = {
   tileSize: 256,
   encoding: 'terrarium' as const,
   minzoom: 7,
-  maxzoom: 15,
+  maxzoom: 18,
 };
 
 const MAPLIBRE_GLYPHS = 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf';

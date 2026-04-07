@@ -354,44 +354,42 @@ def _find_all_dems_for_tile(west: float, south: float, east: float, north: float
     return [r[0] for r in results]
 
 
-def _render_terrain_tile_from_dem(dem_path: str, z: int, x: int, y: int) -> bytes:
-    """Render a 256x256 Terrarium-encoded PNG from a LiDAR DEM GeoTIFF."""
+def _render_terrain_tile_from_vrt(z: int, x: int, y: int) -> bytes | None:
+    """Render a 256x256 Terrarium-encoded PNG from the seamless VRT mosaic.
+    Uses the same VRT as relief tiles so 3D mesh and hillshade have
+    identical coverage — eliminating seam mismatch between them."""
     import rasterio
     from rasterio.warp import Resampling, reproject
-
+    from rasterio.transform import from_bounds
+    from PIL import Image
+    vrts = _get_dem_vrts()
+    if not vrts:
+        return None
     bbox = _tile_to_bbox(z, x, y)
     west, south, east, north = bbox
-
-    # Target: 256x256 in EPSG:4326 (MapLibre terrain tiles use WGS84 bounds)
-    from rasterio.transform import from_bounds
     dst_transform = from_bounds(west, south, east, north, 256, 256)
-
-    with rasterio.open(dem_path) as src:
-        dst_array = np.zeros((1, 256, 256), dtype=np.float32)
-        reproject(
-            source=rasterio.band(src, 1),
-            destination=dst_array,
-            dst_transform=dst_transform,
-            dst_crs="EPSG:4326",
-            resampling=Resampling.cubic,
-        )
-
-    elevation = dst_array[0]
-    # Handle nodata
-    elevation = np.nan_to_num(elevation, nan=0.0)
-
-    # Terrarium encoding: elevation = (R * 256 + G + B / 256) - 32768
+    elev = np.full((256, 256), np.nan, dtype=np.float32)
+    for vrt_path in vrts:
+        try:
+            buf = np.full((1, 256, 256), np.nan, dtype=np.float32)
+            with rasterio.open(vrt_path) as src:
+                reproject(source=rasterio.band(src, 1), destination=buf, dst_transform=dst_transform, dst_crs="EPSG:4326", dst_nodata=np.nan, resampling=Resampling.cubic)
+            patch = buf[0]
+            patch_valid = np.isfinite(patch)
+            elev = np.where(patch_valid & ~np.isfinite(elev), patch, elev)
+        except Exception:
+            pass
+    if not np.isfinite(elev).any():
+        return None
+    elevation = np.nan_to_num(elev, nan=0.0)
     encoded = elevation + 32768.0
     r = np.floor(encoded / 256).astype(np.uint8)
     g = np.floor(encoded % 256).astype(np.uint8)
     b = np.floor((encoded * 256) % 256).astype(np.uint8)
-
-    # Create RGB PNG
-    from PIL import Image
     img = Image.fromarray(np.stack([r, g, b], axis=-1), mode="RGB")
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+    out = io.BytesIO()
+    img.save(out, format="PNG")
+    return out.getvalue()
 
 
 @router.get("/raster/terrain/{z}/{x}/{y}.png")
@@ -409,22 +407,16 @@ async def get_composited_terrain_tile(z: int, x: int, y: int):
         if len(data) >= _MIN_PNG_BYTES:
             return Response(content=data, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
         tile_path.unlink(missing_ok=True)
-    # 2. Try LiDAR DEM (rescan if cache is empty — may have been populated before DEMs existed)
-    global _dem_bounds_cache
-    bbox = _tile_to_bbox(z, x, y)
-    dem_path = _find_dem_for_tile(*bbox)
-    if not dem_path and _dem_bounds_cache is not None and len(_dem_bounds_cache) == 0:
-        _dem_bounds_cache = None  # force rescan on next call
-        dem_path = _find_dem_for_tile(*bbox)
-    log.info("terrain_tile_debug", z=z, x=x, y=y, dem_path=str(dem_path)[:80] if dem_path else "None", cache_size=len(_scan_dem_bounds()))
-    if dem_path:
-        try:
-            png_bytes = _render_terrain_tile_from_dem(dem_path, z, x, y)
+    # 2. Try seamless VRT mosaic (same source as relief tiles — ensures 3D mesh
+    #    and hillshade overlay have identical coverage, preventing MapLibre seam artifacts)
+    try:
+        loop = asyncio.get_event_loop()
+        png_bytes = await loop.run_in_executor(_relief_pool, _render_terrain_tile_from_vrt, z, x, y)
+        if png_bytes:
             _atomic_write(tile_path, png_bytes)
-            log.info("terrain_rendered_lidar", z=z, x=x, y=y, bytes=len(png_bytes))
             return Response(content=png_bytes, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
-        except Exception as e:
-            log.error("terrain_render_failed", dem=dem_path, z=z, x=x, y=y, error=str(e), error_type=type(e).__name__)
+    except Exception as e:
+        log.error("terrain_vrt_render_failed", z=z, x=x, y=y, error=str(e))
     # 3. Proxy from AWS — don't cache to disk (LiDAR DEM may become available after next scan)
     try:
         resp = await _get_http_client().get(AWS_TERRAIN_URL.format(z=z, x=x, y=y))
