@@ -133,7 +133,10 @@ def _render_relief_tile_from_dem(dem_path: str, z: int, x: int, y: int) -> bytes
     valid = np.isfinite(elev)
     if not valid.any():
         return None
-    elev_clean = np.where(valid, elev, 0.0)
+    # Fill nodata with median elevation so gradients at DEM edges are near-zero
+    # (filling with 0.0 creates a false 290m cliff → dark shadow artifact at seams)
+    fill_val = float(np.nanmedian(elev[valid])) if valid.any() else 0.0
+    elev_clean = np.where(valid, elev, fill_val)
     # Cell size in meters at tile center latitude
     center_lat = (south + north) / 2
     m_per_deg_x = 111320 * math.cos(math.radians(center_lat))
