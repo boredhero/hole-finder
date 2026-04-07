@@ -6,13 +6,30 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 
+_vrt_timer = None
+
+def _vrt_rebuild_loop():
+    """Background thread that rebuilds VRT mosaics every 2 minutes.
+    Runs independently of requests so health checks are never blocked."""
+    import time
+    while True:
+        try:
+            from hole_finder.api.routes.raster_tiles import _get_dem_vrts
+            vrts = _get_dem_vrts()
+            print(f"[vrt] Rebuilt {len(vrts)} DEM VRT mosaics")
+        except Exception as e:
+            print(f"[vrt] Rebuild failed (non-fatal): {e}")
+        time.sleep(120)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: import passes to trigger registration
+    import threading
     import hole_finder.detection.passes  # noqa: F401
-
+    # Start VRT rebuild loop in a daemon thread — runs forever, never blocks requests
+    global _vrt_timer
+    _vrt_timer = threading.Thread(target=_vrt_rebuild_loop, daemon=True)
+    _vrt_timer.start()
     yield
-    # Shutdown
 
 
 def create_app() -> FastAPI:
