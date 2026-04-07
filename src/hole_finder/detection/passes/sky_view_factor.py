@@ -39,6 +39,12 @@ class SkyViewFactorPass(DetectionPass):
         if svf is None:
             return []
 
+        # Normalize SVF to 0-1 range — WBT outputs raw integer counts (0-32000+)
+        # depending on version, not a 0-1 fraction. Normalize so threshold works.
+        svf_max = np.nanmax(svf[svf < 1e10])  # exclude nodata
+        if svf_max > 1.5:  # raw integers, needs normalization
+            svf = svf / svf_max
+
         enclosed_mask = svf < threshold
         if not np.any(enclosed_mask):
             return []
