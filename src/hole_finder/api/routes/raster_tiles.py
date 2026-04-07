@@ -22,8 +22,12 @@ from fastapi.responses import Response
 from hole_finder.config import settings
 from hole_finder.utils.logging import log
 
+from concurrent.futures import ThreadPoolExecutor
+
 # Render at 512x512 for retina/HiDPI sharpness (served as tileSize=256 in MapLibre)
 TILE_RENDER_SIZE = 512
+# Thread pool for CPU-bound relief tile rendering (rasterio reproject + numpy MDOW)
+_relief_pool = ThreadPoolExecutor(max_workers=4)
 
 router = APIRouter(tags=["raster_tiles"])
 
@@ -178,13 +182,15 @@ async def get_raster_tile(layer: str, z: int, x: int, y: int):
         if len(data) >= _MIN_PNG_BYTES:
             return Response(content=data, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
         tile_path.unlink(missing_ok=True)
-    # On-the-fly rendering for hillshade/relief layer
+    # On-the-fly rendering for hillshade/relief layer — runs in thread pool
+    # so multiple tiles render concurrently instead of serializing
     if layer == "hillshade":
         bbox = _tile_to_bbox(z, x, y)
         dem_path = _find_dem_for_tile(*bbox)
         if dem_path:
             try:
-                png_bytes = _render_relief_tile_from_dem(dem_path, z, x, y)
+                loop = asyncio.get_event_loop()
+                png_bytes = await loop.run_in_executor(_relief_pool, _render_relief_tile_from_dem, dem_path, z, x, y)
                 if png_bytes:
                     _atomic_write(tile_path, png_bytes)
                     log.info("relief_tile_rendered", z=z, x=x, y=y, bytes=len(png_bytes))
