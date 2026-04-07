@@ -1,50 +1,23 @@
 {
   "validation_sites": [
-    {"name": "Laurel Caverns", "lat": 39.7996, "lon": -79.7117, "type": "cave_entrance", "state": "PA", "county": "Fayette", "confidence": "very_high"},
-    {"name": "Penn's Cave", "lat": 40.8826, "lon": -77.6119, "type": "cave_entrance", "state": "PA", "county": "Centre", "confidence": "very_high"},
-    {"name": "Lincoln Caverns", "lat": 40.5075, "lon": -78.0713, "type": "cave_entrance", "state": "PA", "county": "Huntingdon", "confidence": "very_high"},
-    {"name": "Tytoona Cave", "lat": 40.6021, "lon": -78.2172, "type": "cave_entrance", "state": "PA", "county": "Blair", "confidence": "very_high"},
-    {"name": "Crystal Cave", "lat": 40.5257, "lon": -75.8426, "type": "cave_entrance", "state": "PA", "county": "Berks", "confidence": "high"},
-    {"name": "Woodward Cave", "lat": 40.8881, "lon": -77.3873, "type": "cave_entrance", "state": "PA", "county": "Centre", "confidence": "high"},
-    {"name": "Lost River Caverns", "lat": 40.5808, "lon": -75.331, "type": "cave_entrance", "state": "PA", "county": "Northampton", "confidence": "high"},
-    {"name": "Indian Echo Caverns", "lat": 40.2541, "lon": -76.7171, "type": "cave_entrance", "state": "PA", "county": "Dauphin", "confidence": "high"},
-    {"name": "Harlansburg Cave", "lat": 41.1, "lon": -80.4, "type": "cave_entrance", "state": "PA", "county": "Lawrence", "confidence": "medium"},
+    {"name": "Laurel Caverns", "lat": 39.7996, "lon": -79.7117, "type": "cave_entrance", "state": "PA", "county": "Fayette", "confidence": "high", "notes": "Natural sinkhole entrance on hillside, building nearby but entrance exposed to sky"},
+    {"name": "Tytoona Cave", "lat": 40.6021, "lon": -78.2172, "type": "cave_entrance", "state": "PA", "county": "Blair", "confidence": "very_high", "notes": "NSS-managed wild cave, natural stream entrance at cliff face, no structures"},
+    {"name": "Harlansburg Cave", "lat": 41.1, "lon": -80.4, "type": "cave_entrance", "state": "PA", "county": "Lawrence", "confidence": "high", "notes": "Wild cave, one of longest in western PA, natural entrance in sinkhole with bat gate, no building"},
     {"name": "Allegheny Cemetery Cave", "lat": 40.4754, "lon": -79.9460, "type": "cave_entrance", "state": "PA", "county": "Allegheny", "confidence": "very_high", "notes": "Field-verified 2026-04-02. Bedding plane cave entrance in exposed Pittsburgh Formation sandstone/limestone, wooded unused section of Allegheny Cemetery, Lawrenceville. Associated sinkhole depression and root-throw nearby. Undocumented — no geological survey or cave registry entry exists."},
 
-    {"name": "Tour-Ed Mine", "lat": 40.6175, "lon": -79.7605, "type": "mine_portal", "state": "PA", "county": "Allegheny", "confidence": "very_high"},
-    {"name": "Pioneer Tunnel", "lat": 40.88, "lon": -76.13, "type": "mine_portal", "state": "PA", "county": "Schuylkill", "confidence": "medium"},
-    {"name": "Lackawanna Coal Mine", "lat": 41.4, "lon": -75.6, "type": "mine_portal", "state": "PA", "county": "Lackawanna", "confidence": "medium"},
-    {"name": "No. 9 Mine", "lat": 40.82, "lon": -75.88, "type": "mine_portal", "state": "PA", "county": "Carbon", "confidence": "medium"},
-    {"name": "Centralia", "lat": 40.81, "lon": -76.35, "type": "mine_portal", "state": "PA", "county": "Columbia", "confidence": "medium"},
+    {"name": "Centralia", "lat": 40.81, "lon": -76.35, "type": "sinkhole", "state": "PA", "county": "Columbia", "confidence": "very_high", "notes": "Underground mine fire since 1962. Visible surface subsidence, open fissures, vents. LiDAR sees ground deformation clearly."},
 
-    {"name": "Lost World Caverns", "lat": 37.8326, "lon": -80.4469, "type": "cave_entrance", "state": "WV", "county": "Greenbrier", "confidence": "very_high"},
-    {"name": "Organ Cave", "lat": 37.718, "lon": -80.4369, "type": "cave_entrance", "state": "WV", "county": "Greenbrier", "confidence": "very_high"},
-    {"name": "Seneca Caverns WV", "lat": 38.7631, "lon": -79.3885, "type": "cave_entrance", "state": "WV", "county": "Randolph", "confidence": "high"},
-    {"name": "McClung Cave", "lat": 38.0379, "lon": -80.7268, "type": "cave_entrance", "state": "WV", "county": "Greenbrier", "confidence": "high"},
-    {"name": "Friars Hole", "lat": 38.0673, "lon": -80.3292, "type": "cave_entrance", "state": "WV", "county": "Greenbrier", "confidence": "high"},
+    {"name": "Organ Cave", "lat": 37.718, "lon": -80.4369, "type": "cave_entrance", "state": "WV", "county": "Greenbrier", "confidence": "very_high", "notes": "Large natural walk-in entrance at base of hillside, no building over it. One of longest caves in WV."},
+    {"name": "McClung Cave", "lat": 38.0379, "lon": -80.7268, "type": "cave_entrance", "state": "WV", "county": "Greenbrier", "confidence": "high", "notes": "Wild cave, natural stream-level entrance in cliff, no commercial development"},
+    {"name": "Friars Hole", "lat": 38.0673, "lon": -80.3292, "type": "cave_entrance", "state": "WV", "county": "Greenbrier", "confidence": "high", "notes": "Wild cave system, multiple natural entrances in sinkholes and hillsides, no development"},
 
-    {"name": "Ohio Caverns", "lat": 40.239, "lon": -83.6979, "type": "cave_entrance", "state": "OH", "county": "Champaign", "confidence": "very_high"},
-    {"name": "Zane Shawnee Caverns", "lat": 40.3796, "lon": -83.6366, "type": "cave_entrance", "state": "OH", "county": "Logan", "confidence": "high"},
+    {"name": "Bat Cave NC", "lat": 35.4697, "lon": -82.278, "type": "cave_entrance", "state": "NC", "county": "Henderson", "confidence": "high", "notes": "Nature Conservancy property, large natural cliff face entrance, no structures"},
+    {"name": "Ray Mica Mine", "lat": 35.85, "lon": -82.22, "type": "mine_portal", "state": "NC", "county": "Yancey", "confidence": "medium", "notes": "Historic mica mine on forest land, exposed open-cut workings and adit entrances"},
 
-    {"name": "Howe Caverns", "lat": 42.6962, "lon": -74.3986, "type": "cave_entrance", "state": "NY", "county": "Schoharie", "confidence": "very_high"},
-    {"name": "Lockport Cave", "lat": 43.1706, "lon": -78.6903, "type": "cave_entrance", "state": "NY", "county": "Niagara", "confidence": "high"},
+    {"name": "Davis Pyrite Mine", "lat": 42.6975, "lon": -72.8703, "type": "mine_portal", "state": "MA", "county": "Franklin", "confidence": "high", "notes": "Historic abandoned pyrite mine in Rowe, exposed adit entrance in hillside, no covering structure"},
 
-    {"name": "Linville Caverns", "lat": 35.9192, "lon": -81.9386, "type": "cave_entrance", "state": "NC", "county": "McDowell", "confidence": "very_high"},
-    {"name": "Ray Mica Mine", "lat": 35.85, "lon": -82.22, "type": "mine_portal", "state": "NC", "county": "Yancey", "confidence": "medium"},
-    {"name": "Bat Cave NC", "lat": 35.4697, "lon": -82.278, "type": "cave_entrance", "state": "NC", "county": "Henderson", "confidence": "high"},
+    {"name": "Bayou Corne Sinkhole", "lat": 30.0008, "lon": -91.1117, "type": "sinkhole", "state": "LA", "county": "Assumption", "confidence": "very_high", "notes": "Massive ~35 acre open sinkhole from 2012 salt dome collapse, enormous terrain depression visible in any LiDAR"},
 
-    {"name": "Crystal Grottoes", "lat": 39.5033, "lon": -77.6533, "type": "cave_entrance", "state": "MD", "county": "Washington", "confidence": "very_high"},
-    {"name": "Western MD Coal Mine", "lat": 39.65, "lon": -79.0, "type": "mine_portal", "state": "MD", "county": "Allegany", "confidence": "medium"},
-
-    {"name": "Davis Pyrite Mine", "lat": 42.6975, "lon": -72.8703, "type": "mine_portal", "state": "MA", "county": "Franklin", "confidence": "high"},
-    {"name": "Natural Bridge MA", "lat": 42.6819, "lon": -73.1478, "type": "cave_entrance", "state": "MA", "county": "Berkshire", "confidence": "high"},
-
-    {"name": "Bayou Corne Sinkhole", "lat": 30.0008, "lon": -91.1117, "type": "sinkhole", "state": "LA", "county": "Assumption", "confidence": "very_high"},
-    {"name": "Lake Peigneur", "lat": 30.0006, "lon": -91.9833, "type": "sinkhole", "state": "LA", "county": "Iberia", "confidence": "high"},
-
-    {"name": "Lava Beds NM Valentine Cave", "lat": 41.7147, "lon": -121.5083, "type": "cave_entrance", "state": "CA", "county": "Siskiyou", "confidence": "very_high"},
-    {"name": "Crystal Cave Sequoia", "lat": 36.5861, "lon": -118.8306, "type": "cave_entrance", "state": "CA", "county": "Tulare", "confidence": "very_high"},
-    {"name": "Moaning Cavern", "lat": 38.068, "lon": -120.466, "type": "cave_entrance", "state": "CA", "county": "Calaveras", "confidence": "very_high"},
-    {"name": "Lake Shasta Caverns", "lat": 40.7567, "lon": -122.3281, "type": "cave_entrance", "state": "CA", "county": "Shasta", "confidence": "high"}
+    {"name": "Lava Beds NM Valentine Cave", "lat": 41.7147, "lon": -121.5083, "type": "cave_entrance", "state": "CA", "county": "Siskiyou", "confidence": "very_high", "notes": "NPS lava tube with natural collapse entrance — open hole in lava field, no building, just stairs down"}
   ]
 }
