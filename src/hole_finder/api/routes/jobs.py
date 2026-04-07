@@ -185,7 +185,7 @@ async def consumer_scan(
         region=region_geom,
         config={
             "pass_config": "sinkhole_survey",
-            "tile_limit": 12,
+            "tile_limit": 50,
             "consumer": True,
             "center_lat": body.lat,
             "center_lon": body.lon,

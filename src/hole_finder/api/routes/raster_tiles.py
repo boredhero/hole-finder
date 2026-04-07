@@ -193,11 +193,12 @@ def _render_relief_tile(z: int, x: int, y: int) -> bytes | None:
     valid = np.isfinite(elev)
     if not valid.any():
         return None
-    # Fill small gaps (< 10px / ~30m) at DEM edges with nearest-neighbor
+    # Fill gaps at DEM edges with nearest-neighbor (up to 30px so gaps stay
+    # closed even at high zoom where each pixel covers less ground)
     nan_mask = ~valid
     if nan_mask.any() and valid.any():
         dist, ind = distance_transform_edt(nan_mask, return_distances=True, return_indices=True)
-        fill_mask = nan_mask & (dist <= 10)
+        fill_mask = nan_mask & (dist <= 30)
         if fill_mask.any():
             elev[fill_mask] = elev[ind[0][fill_mask], ind[1][fill_mask]]
             valid = valid | fill_mask
