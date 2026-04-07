@@ -3,7 +3,8 @@
 Composited terrain tiles serve high-res LiDAR DEMs where available,
 falling back to AWS Terrarium global tiles (~30m) elsewhere.
 Relief tiles use USGS MDOW (multi-directional hillshade) with hypsometric
-elevation coloring for ONX Backcountry-quality terrain visualization.
+elevation coloring. All DEMs are mosaiced into a seamless GDAL VRT so there
+are no gaps between adjacent COPC tiles.
 Uses a lazy cache: first request computes + caches, subsequent requests are instant.
 """
 
@@ -11,6 +12,7 @@ import asyncio
 import io
 import math
 import os
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -18,17 +20,65 @@ import httpx
 import numpy as np
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
+from scipy.ndimage import distance_transform_edt
 
 from hole_finder.config import settings
 from hole_finder.utils.logging import log
 
 from concurrent.futures import ThreadPoolExecutor
 
-# Tile render size — 256 matches MapLibre tileSize for seamless rendering.
-# 512 retina rendering possible but needs separate performance tuning first.
 TILE_RENDER_SIZE = 256
-# Thread pool for CPU-bound relief tile rendering (rasterio reproject + numpy MDOW)
 _relief_pool = ThreadPoolExecutor(max_workers=4)
+
+# Seamless DEM mosaic VRT — rebuilt every 2 minutes to pick up new tiles
+_dem_vrt_path: str | None = None
+_dem_vrt_time: float = 0.0
+
+
+def _get_dem_vrts() -> list[str]:
+    """Build per-CRS GDAL VRTs mosaicing all processed DEMs into seamless rasters.
+    Groups DEMs by CRS (UTM zone), builds one VRT per group via gdalbuildvrt.
+    VRTs are virtual XML files — zero data copying, GDAL reads source tiles on demand.
+    Rebuilds every 2 minutes to pick up newly processed tiles."""
+    global _dem_vrt_path, _dem_vrt_time
+    import time as _time
+    now = _time.time()
+    if _dem_vrt_path and (now - _dem_vrt_time) < _DEM_CACHE_TTL:
+        # Return cached list if all files still exist
+        cached = _dem_vrt_path if isinstance(_dem_vrt_path, list) else [_dem_vrt_path]
+        if all(Path(p).exists() for p in cached):
+            return cached
+    import rasterio
+    dem_paths = sorted(settings.processed_dir.glob("*/*_dem.tif"))
+    if not dem_paths:
+        return []
+    # Group by CRS (usually 1-2 UTM zones per region)
+    crs_groups: dict[str, list[str]] = {}
+    for p in dem_paths:
+        try:
+            with rasterio.open(p) as src:
+                epsg = src.crs.to_epsg() or "unknown"
+            crs_groups.setdefault(str(epsg), []).append(str(p))
+        except Exception:
+            pass
+    vrt_dir = settings.data_dir / "tile_cache"
+    vrt_dir.mkdir(parents=True, exist_ok=True)
+    vrts = []
+    for crs_id, paths in crs_groups.items():
+        vrt_path = str(vrt_dir / f"dems_{crs_id}.vrt")
+        filelist = str(vrt_dir / f"dems_{crs_id}_list.txt")
+        try:
+            with open(filelist, "w") as f:
+                f.write("\n".join(paths))
+            subprocess.run(["gdalbuildvrt", "-input_file_list", filelist, vrt_path], check=True, capture_output=True, timeout=60)
+            vrts.append(vrt_path)
+        except Exception as e:
+            log.warning("vrt_build_failed", crs=crs_id, count=len(paths), error=str(e))
+    _dem_vrt_path = vrts
+    _dem_vrt_time = now
+    log.info("dem_vrts_rebuilt", groups=len(vrts), total_dems=len(dem_paths))
+    return vrts
+
 
 router = APIRouter(tags=["raster_tiles"])
 
@@ -107,39 +157,52 @@ def _elevation_colormap(elevation: np.ndarray) -> np.ndarray:
     return rgb
 
 
-def _render_relief_tile(dem_paths: list[str], z: int, x: int, y: int) -> bytes | None:
-    """Render a MDOW relief tile compositing ALL overlapping DEMs.
-    Fills gaps between adjacent COPC tiles by layering multiple DEM sources.
+def _render_relief_tile(z: int, x: int, y: int) -> bytes | None:
+    """Render a MDOW relief tile from seamless per-CRS VRT mosaics.
+    Composites elevation from all VRTs (one per UTM zone), then GDAL
+    handles stitching adjacent COPC tiles within each zone seamlessly.
+    scipy gap-fills remaining tiny holes at DEM edges.
     Returns RGBA PNG with transparency outside LiDAR coverage."""
     import rasterio
     from rasterio.warp import Resampling, reproject
     from rasterio.transform import from_bounds
     from PIL import Image
+    vrts = _get_dem_vrts()
+    if not vrts:
+        return None
     bbox = _tile_to_bbox(z, x, y)
     west, south, east, north = bbox
     size = TILE_RENDER_SIZE
-    pad = 3  # padding for gradient computation at tile edges
+    pad = 3
     full = size + 2 * pad
     dx = (east - west) / size * pad
     dy = (north - south) / size * pad
     dst_transform = from_bounds(west - dx, south - dy, east + dx, north + dy, full, full)
-    # Composite elevation from all overlapping DEMs (later overwrites earlier where valid)
+    # Composite from all VRTs (usually 1, sometimes 2 for zone boundaries)
     elev = np.full((full, full), np.nan, dtype=np.float32)
-    for dem_path in dem_paths:
+    for vrt_path in vrts:
         try:
             buf = np.full((1, full, full), np.nan, dtype=np.float32)
-            with rasterio.open(dem_path) as src:
+            with rasterio.open(vrt_path) as src:
                 reproject(source=rasterio.band(src, 1), destination=buf, dst_transform=dst_transform, dst_crs="EPSG:4326", dst_nodata=np.nan, resampling=Resampling.cubic)
             patch = buf[0]
             patch_valid = np.isfinite(patch)
             elev = np.where(patch_valid & ~np.isfinite(elev), patch, elev)
         except Exception as e:
-            log.warning("relief_reproject_failed", dem=dem_path, z=z, x=x, y=y, error=str(e))
+            log.warning("relief_vrt_read_failed", vrt=vrt_path, z=z, x=x, y=y, error=str(e))
     valid = np.isfinite(elev)
     if not valid.any():
         return None
-    # Fill nodata with median elevation so gradients at DEM edges are near-zero
-    fill_val = float(np.nanmedian(elev[valid]))
+    # Fill small gaps (< 10px / ~30m) at DEM edges with nearest-neighbor
+    nan_mask = ~valid
+    if nan_mask.any() and valid.any():
+        dist, ind = distance_transform_edt(nan_mask, return_distances=True, return_indices=True)
+        fill_mask = nan_mask & (dist <= 10)
+        if fill_mask.any():
+            elev[fill_mask] = elev[ind[0][fill_mask], ind[1][fill_mask]]
+            valid = valid | fill_mask
+    # Fill remaining nodata with median (for gradient edge handling)
+    fill_val = float(np.nanmedian(elev[valid])) if valid.any() else 0.0
     elev_clean = np.where(valid, elev, fill_val)
     # Cell size in meters at tile center latitude
     center_lat = (south + north) / 2
@@ -188,21 +251,17 @@ async def get_raster_tile(layer: str, z: int, x: int, y: int):
         if len(data) >= _MIN_PNG_BYTES:
             return Response(content=data, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
         tile_path.unlink(missing_ok=True)
-    # On-the-fly rendering for hillshade/relief layer — composites ALL overlapping
-    # DEMs to fill gaps between COPC tiles. Runs in thread pool for concurrency.
+    # On-the-fly rendering for hillshade/relief layer from seamless VRT mosaic
     if layer == "hillshade":
-        bbox = _tile_to_bbox(z, x, y)
-        dem_paths = _find_all_dems_for_tile(*bbox)
-        if dem_paths:
-            try:
-                loop = asyncio.get_event_loop()
-                png_bytes = await loop.run_in_executor(_relief_pool, _render_relief_tile, dem_paths, z, x, y)
-                if png_bytes:
-                    _atomic_write(tile_path, png_bytes)
-                    log.info("relief_tile_rendered", z=z, x=x, y=y, dems=len(dem_paths), bytes=len(png_bytes))
-                    return Response(content=png_bytes, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
-            except Exception as e:
-                log.error("relief_render_failed", z=z, x=x, y=y, error=str(e), error_type=type(e).__name__)
+        try:
+            loop = asyncio.get_event_loop()
+            png_bytes = await loop.run_in_executor(_relief_pool, _render_relief_tile, z, x, y)
+            if png_bytes:
+                _atomic_write(tile_path, png_bytes)
+                log.info("relief_tile_rendered", z=z, x=x, y=y, bytes=len(png_bytes))
+                return Response(content=png_bytes, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+        except Exception as e:
+            log.error("relief_render_failed", z=z, x=x, y=y, error=str(e), error_type=type(e).__name__)
     return Response(content=TRANSPARENT_PNG, media_type="image/png", headers={"Cache-Control": "public, max-age=60"})
 
 
