@@ -2,6 +2,8 @@
 
 Composited terrain tiles serve high-res LiDAR DEMs where available,
 falling back to AWS Terrarium global tiles (~30m) elsewhere.
+Relief tiles use USGS MDOW (multi-directional hillshade) with hypsometric
+elevation coloring for ONX Backcountry-quality terrain visualization.
 Uses a lazy cache: first request computes + caches, subsequent requests are instant.
 """
 
@@ -19,6 +21,9 @@ from fastapi.responses import Response
 
 from hole_finder.config import settings
 from hole_finder.utils.logging import log
+
+# Render at 512x512 for retina/HiDPI sharpness (served as tileSize=256 in MapLibre)
+TILE_RENDER_SIZE = 512
 
 router = APIRouter(tags=["raster_tiles"])
 
@@ -65,44 +70,128 @@ def _tile_to_bbox(z: int, x: int, y: int) -> tuple[float, float, float, float]:
     return lon_min, lat_min, lon_max, lat_max
 
 
+def _multidirectional_hillshade(dem: np.ndarray, cell_size_x: float, cell_size_y: float, altitude: float = 45.0) -> np.ndarray:
+    """USGS multi-directional oblique-weighted (MDOW) hillshade — 6 azimuths.
+    Produces much more even illumination than single-direction hillshade,
+    eliminating the harsh shadow/bright bias of a single sun angle."""
+    alt_rad = np.radians(altitude)
+    dzdy, dzdx = np.gradient(dem, cell_size_y, cell_size_x)
+    slope = np.sqrt(dzdx**2 + dzdy**2)
+    aspect = np.arctan2(-dzdy, dzdx)
+    azimuths = [225, 270, 315, 360, 45, 90]
+    weights = [0.167, 0.278, 0.167, 0.111, 0.056, 0.222]
+    result = np.zeros_like(dem, dtype=np.float64)
+    for az, w in zip(azimuths, weights):
+        az_rad = np.radians(az)
+        hs = (np.cos(alt_rad) * slope * np.cos(az_rad - aspect) + np.sin(alt_rad)) / (1.0 + slope)
+        result += w * np.clip(hs, 0, 1)
+    return np.clip(result * 255, 0, 255).astype(np.uint8)
+
+
+def _elevation_colormap(elevation: np.ndarray) -> np.ndarray:
+    """Hypsometric color ramp — green valleys → tan hills → gray peaks.
+    Returns (H, W, 3) uint8 array."""
+    breaks = [0, 100, 200, 400, 700, 1200, 2000, 3500]
+    colors = [
+        (72, 133, 75), (106, 163, 88), (166, 194, 114), (209, 197, 140),
+        (186, 163, 130), (170, 160, 150), (200, 200, 200), (245, 245, 245),
+    ]
+    rgb = np.zeros((*elevation.shape, 3), dtype=np.uint8)
+    for ch in range(3):
+        rgb[..., ch] = np.interp(elevation, breaks, [c[ch] for c in colors]).astype(np.uint8)
+    return rgb
+
+
+def _render_relief_tile_from_dem(dem_path: str, z: int, x: int, y: int) -> bytes | None:
+    """Render a 512x512 MDOW relief tile: multi-directional hillshade × elevation color.
+    Returns RGBA PNG with transparency outside LiDAR coverage."""
+    import rasterio
+    from rasterio.warp import Resampling, reproject
+    from rasterio.transform import from_bounds
+    from PIL import Image
+    bbox = _tile_to_bbox(z, x, y)
+    west, south, east, north = bbox
+    size = TILE_RENDER_SIZE
+    pad = 3  # padding for gradient computation at tile edges
+    full = size + 2 * pad
+    dx = (east - west) / size * pad
+    dy = (north - south) / size * pad
+    dst_transform = from_bounds(west - dx, south - dy, east + dx, north + dy, full, full)
+    try:
+        with rasterio.open(dem_path) as src:
+            dst_array = np.full((1, full, full), np.nan, dtype=np.float32)
+            reproject(source=rasterio.band(src, 1), destination=dst_array, dst_transform=dst_transform, dst_crs="EPSG:4326", dst_nodata=np.nan, resampling=Resampling.cubic)
+    except Exception as e:
+        log.warning("relief_reproject_failed", dem=dem_path, z=z, x=x, y=y, error=str(e))
+        return None
+    elev = dst_array[0]
+    valid = np.isfinite(elev)
+    if not valid.any():
+        return None
+    elev_clean = np.where(valid, elev, 0.0)
+    # Cell size in meters at tile center latitude
+    center_lat = (south + north) / 2
+    m_per_deg_x = 111320 * math.cos(math.radians(center_lat))
+    m_per_deg_y = 110540
+    pixel_deg_x = (east - west + 2 * dx) / full
+    pixel_deg_y = (north - south + 2 * dy) / full
+    cell_x = pixel_deg_x * m_per_deg_x
+    cell_y = pixel_deg_y * m_per_deg_y
+    hs = _multidirectional_hillshade(elev_clean, cell_x, cell_y)
+    color_rgb = _elevation_colormap(elev_clean)
+    # Multiply composite: color × (hillshade / 255)
+    hs_f = hs.astype(np.float32) / 255.0
+    composited = np.zeros((*elev.shape, 4), dtype=np.uint8)
+    composited[..., 0] = np.clip(color_rgb[..., 0].astype(np.float32) * hs_f, 0, 255).astype(np.uint8)
+    composited[..., 1] = np.clip(color_rgb[..., 1].astype(np.float32) * hs_f, 0, 255).astype(np.uint8)
+    composited[..., 2] = np.clip(color_rgb[..., 2].astype(np.float32) * hs_f, 0, 255).astype(np.uint8)
+    composited[..., 3] = np.where(valid, 255, 0).astype(np.uint8)
+    # Crop padding → final tile
+    tile = composited[pad:pad + size, pad:pad + size]
+    img = Image.fromarray(tile, mode="RGBA")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
+TRANSPARENT_PNG = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+    b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+    b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
+    b"\r\n\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
 @router.get("/raster/{layer}/{z}/{x}/{y}.png")
-async def get_raster_tile(
-    layer: str,
-    z: int,
-    x: int,
-    y: int,
-):
+async def get_raster_tile(layer: str, z: int, x: int, y: int):
     """Serve a raster tile as PNG.
-    Supported layers: hillshade, slope, svf, lrm
+    Supported layers: hillshade (MDOW relief), slope, svf, lrm
     Terrain layer is handled by the composited terrain endpoint.
     """
-    # FastAPI matches {layer} before /terrain/ — redirect terrain requests
     if layer == "terrain":
         return await get_composited_terrain_tile(z, x, y)
-    # Check tile cache
+    # Check tile cache first
     cache_dir = settings.data_dir / "tile_cache" / layer / str(z) / str(x)
     tile_path = cache_dir / f"{y}.png"
-
     if tile_path.exists():
-        return Response(
-            content=tile_path.read_bytes(),
-            media_type="image/png",
-            headers={"Cache-Control": "public, max-age=86400"},
-        )
-
-    # Tile not cached — return transparent 1x1 PNG
-    # (In production, we'd generate on-the-fly from the GeoTIFF)
-    TRANSPARENT_PNG = (
-        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
-        b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
-        b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
-        b"\r\n\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
-    )
-    return Response(
-        content=TRANSPARENT_PNG,
-        media_type="image/png",
-        headers={"Cache-Control": "public, max-age=60"},
-    )
+        data = tile_path.read_bytes()
+        if len(data) >= _MIN_PNG_BYTES:
+            return Response(content=data, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+        tile_path.unlink(missing_ok=True)
+    # On-the-fly rendering for hillshade/relief layer
+    if layer == "hillshade":
+        bbox = _tile_to_bbox(z, x, y)
+        dem_path = _find_dem_for_tile(*bbox)
+        if dem_path:
+            try:
+                png_bytes = _render_relief_tile_from_dem(dem_path, z, x, y)
+                if png_bytes:
+                    _atomic_write(tile_path, png_bytes)
+                    log.info("relief_tile_rendered", z=z, x=x, y=y, bytes=len(png_bytes))
+                    return Response(content=png_bytes, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+            except Exception as e:
+                log.error("relief_render_failed", z=z, x=x, y=y, error=str(e), error_type=type(e).__name__)
+    return Response(content=TRANSPARENT_PNG, media_type="image/png", headers={"Cache-Control": "public, max-age=60"})
 
 
 def _scan_dem_bounds() -> dict[str, tuple[float, float, float, float]]:

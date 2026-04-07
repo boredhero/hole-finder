@@ -57,7 +57,7 @@ const SATELLITE_STYLE = {
   ],
 };
 
-const LIDAR_STYLE = {
+const RELIEF_STYLE = {
   version: 8 as const,
   glyphs: MAPLIBRE_GLYPHS,
   sources: {
@@ -68,26 +68,26 @@ const LIDAR_STYLE = {
       maxzoom: 17,
       attribution: 'OpenTopoMap',
     },
-    'lidar-hillshade': {
+    'relief-hillshade': {
       type: 'raster' as const,
       tiles: ['/api/raster/hillshade/{z}/{x}/{y}.png'],
       tileSize: 256,
       minzoom: 10,
-      maxzoom: 16,
+      maxzoom: 18,
     },
     'terrain-source': TERRAIN_SOURCE,
   },
   layers: [
     {
-      id: 'lidar-hillshade',
-      type: 'raster' as const,
-      source: 'lidar-hillshade',
-    },
-    {
       id: 'topo-base',
       type: 'raster' as const,
       source: 'topo-contours',
-      paint: { 'raster-opacity': 0.55 },
+    },
+    {
+      id: 'relief-hillshade',
+      type: 'raster' as const,
+      source: 'relief-hillshade',
+      paint: { 'raster-opacity': 0.85 },
     },
   ],
 };
@@ -116,7 +116,7 @@ const TOPO_STYLE = {
 
 const BASEMAP_STYLES: Record<Basemap, string | object> = {
   satellite: SATELLITE_STYLE,
-  lidar: LIDAR_STYLE,
+  relief: RELIEF_STYLE,
   topo: TOPO_STYLE,
   dark: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
 };
@@ -134,28 +134,39 @@ function DeckGLOverlay(props: { layers: any[] }) {
 }
 
 /** Manages 3D terrain via direct map.setTerrain() call with try-catch.
- *  Using the <Map terrain={...}> prop causes react-map-gl to call setTerrain
- *  during its React render cycle, which races with MapLibre's render loop
- *  and throws uncatchable DOMExceptions. Calling it directly lets us catch. */
+ *  Must re-apply terrain after EVERY basemap style swap because MapLibre
+ *  destroys all sources/layers/terrain on style replacement.
+ *  Listens for style.load to catch async style changes too. */
 function TerrainController() {
   const { current: mapRef } = useMap();
   const show3DTerrain = useStore((s) => s.show3DTerrain);
   const terrainReady = useStore((s) => s.terrainReady);
   const terrainExaggeration = useStore((s) => s.terrainExaggeration);
+  const basemap = useStore((s) => s.basemap);
   useEffect(() => {
     const map = mapRef?.getMap();
     if (!map) return;
-    requestAnimationFrame(() => {
-      try {
-        if (!map.isStyleLoaded() || !map.getSource('terrain-source')) return;
-        if (show3DTerrain && terrainReady) {
-          map.setTerrain({ source: 'terrain-source', exaggeration: terrainExaggeration });
-        } else {
-          map.setTerrain(null);
-        }
-      } catch { /* suppress DOMException during style transitions */ }
-    });
-  }, [mapRef, show3DTerrain, terrainReady, terrainExaggeration]);
+    const applyTerrain = () => {
+      requestAnimationFrame(() => {
+        try {
+          if (!map.isStyleLoaded()) return;
+          // Ensure terrain source exists (external styles like Dark don't include it)
+          if (!map.getSource('terrain-source')) {
+            try { map.addSource('terrain-source', TERRAIN_SOURCE); } catch { /* race */ }
+          }
+          if (!map.getSource('terrain-source')) return;
+          if (show3DTerrain && terrainReady) {
+            map.setTerrain({ source: 'terrain-source', exaggeration: terrainExaggeration });
+          } else {
+            map.setTerrain(null);
+          }
+        } catch { /* suppress DOMException during style transitions */ }
+      });
+    };
+    applyTerrain();
+    map.on('style.load', applyTerrain);
+    return () => { map.off('style.load', applyTerrain); };
+  }, [mapRef, show3DTerrain, terrainReady, terrainExaggeration, basemap]);
   return null;
 }
 
@@ -397,15 +408,24 @@ function MVTLayerManager() {
       if (!map.getSource('detections-mvt')) setup();
     });
 
-    // Re-add layers after basemap change destroys them
+    // Re-add layers after basemap change destroys them.
+    // rAF delay lets the GL context settle — without it, addSource/addLayer
+    // throw DOMException during the style transition.
     map.on('style.load', () => {
-      // For external styles (topo/dark), terrain source isn't baked in — add it
-      if (!map.getSource('terrain-source')) {
+      requestAnimationFrame(() => {
         try {
-          map.addSource('terrain-source', TERRAIN_SOURCE);
-        } catch { /* source may already exist during rapid style switches */ }
-      }
-      addMVTLayers(map);
+          if (!map.getSource('terrain-source')) {
+            map.addSource('terrain-source', TERRAIN_SOURCE);
+          }
+        } catch { /* race during rapid style switches */ }
+        try {
+          addMVTLayers(map);
+        } catch (e) {
+          console.warn('[MVT] Re-add after style change failed:', e);
+          // Retry once more after another frame
+          requestAnimationFrame(() => { try { addMVTLayers(map); } catch { /* give up */ } });
+        }
+      });
     });
   }, [mapRef, addMVTLayers, setSelectedDetection, setDrawerState, setSidebarOpen]);
 

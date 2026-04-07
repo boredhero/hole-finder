@@ -5,7 +5,7 @@ import type { Basemap, FeatureType } from '../../types';
 const ALL_TYPES: FeatureType[] = ['cave_entrance', 'mine_portal', 'sinkhole', 'depression', 'collapse_pit', 'spring', 'lava_tube', 'salt_dome_collapse', 'unknown'];
 const BASEMAPS: { value: Basemap; label: string }[] = [
   { value: 'satellite', label: 'Satellite' },
-  { value: 'lidar', label: 'LiDAR' },
+  { value: 'relief', label: 'Relief' },
   { value: 'topo', label: 'Topo' },
   { value: 'dark', label: 'Dark' },
 ];
@@ -19,8 +19,6 @@ export default function FilterPanel() {
   const toggleHeatmap = useStore((s) => s.toggleHeatmap);
   const showGroundTruth = useStore((s) => s.showGroundTruth);
   const toggleGroundTruth = useStore((s) => s.toggleGroundTruth);
-  const show3DTerrain = useStore((s) => s.show3DTerrain);
-  const toggle3DTerrain = useStore((s) => s.toggle3DTerrain);
   const terrainExaggeration = useStore((s) => s.terrainExaggeration);
   const setTerrainExaggeration = useStore((s) => s.setTerrainExaggeration);
   const showTileCoverage = useStore((s) => s.showTileCoverage);
@@ -88,10 +86,6 @@ export default function FilterPanel() {
             <span className="text-slate-200">Ground Truth Sites</span>
           </label>
           <label className="flex items-center gap-3 cursor-pointer text-sm py-1">
-            <input type="checkbox" checked={show3DTerrain} onChange={toggle3DTerrain} className="rounded w-4 h-4" />
-            <span className="text-slate-200">3D Terrain</span>
-          </label>
-          <label className="flex items-center gap-3 cursor-pointer text-sm py-1">
             <input type="checkbox" checked={showTileCoverage} onChange={toggleTileCoverage} className="rounded w-4 h-4" />
             <span className="text-slate-200">Tile Coverage</span>
           </label>
@@ -108,14 +102,12 @@ export default function FilterPanel() {
             </div>
           </div>
         )}
-        {show3DTerrain && (
-          <div className="ml-7 mt-2">
-            <span className="text-sm text-slate-400">Exaggeration: {terrainExaggeration.toFixed(1)}x</span>
-            <input type="range" min={0.5} max={5} step={0.5} value={terrainExaggeration}
-              onChange={(e) => setTerrainExaggeration(parseFloat(e.target.value))}
-              className="w-full accent-cherry-500 h-2" />
-          </div>
-        )}
+        <div className="mt-2">
+          <span className="text-sm text-slate-400">Terrain Exaggeration: {terrainExaggeration.toFixed(1)}x</span>
+          <input type="range" min={0.5} max={5} step={0.5} value={terrainExaggeration}
+            onChange={(e) => setTerrainExaggeration(parseFloat(e.target.value))}
+            className="w-full accent-cherry-500 h-2" />
+        </div>
       </section>
     </div>
   );
