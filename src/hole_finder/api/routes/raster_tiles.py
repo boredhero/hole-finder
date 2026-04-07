@@ -24,6 +24,8 @@ router = APIRouter(tags=["raster_tiles"])
 
 # In-memory cache of processed DEM bounds: {path: (west, south, east, north)}
 _dem_bounds_cache: dict[str, tuple[float, float, float, float]] | None = None
+_dem_bounds_cache_time: float = 0.0
+_DEM_CACHE_TTL = 120.0  # rescan every 2 minutes so new tiles show up without restart
 AWS_TERRAIN_URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
 # Shared httpx client — reuses TLS connections to AWS across all tile requests
 _http_client: httpx.AsyncClient | None = None
@@ -105,11 +107,11 @@ async def get_raster_tile(
 
 def _scan_dem_bounds() -> dict[str, tuple[float, float, float, float]]:
     """Scan processed DEMs on disk and cache their WGS84 bounds.
-
-    Returns dict mapping DEM file path → (west, south, east, north) in EPSG:4326.
+    Cache expires every 2 minutes so newly processed tiles are found without restart.
     """
-    global _dem_bounds_cache
-    if _dem_bounds_cache is not None:
+    global _dem_bounds_cache, _dem_bounds_cache_time
+    import time as _time
+    if _dem_bounds_cache is not None and (_time.time() - _dem_bounds_cache_time) < _DEM_CACHE_TTL:
         return _dem_bounds_cache
 
     import rasterio
@@ -120,6 +122,7 @@ def _scan_dem_bounds() -> dict[str, tuple[float, float, float, float]]:
     processed_dir = settings.processed_dir
     if not processed_dir.exists():
         _dem_bounds_cache = bounds
+    _dem_bounds_cache_time = _time.time()
         return bounds
 
     for dem_path in processed_dir.glob("*/*_dem.tif"):
@@ -149,6 +152,7 @@ def _scan_dem_bounds() -> dict[str, tuple[float, float, float, float]]:
 
     log.info("dem_bounds_scanned", count=len(bounds))
     _dem_bounds_cache = bounds
+    _dem_bounds_cache_time = _time.time()
     return bounds
 
 
