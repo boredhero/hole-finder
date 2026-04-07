@@ -24,8 +24,9 @@ from hole_finder.utils.logging import log
 
 from concurrent.futures import ThreadPoolExecutor
 
-# Render at 512x512 for retina/HiDPI sharpness (served as tileSize=256 in MapLibre)
-TILE_RENDER_SIZE = 512
+# Tile render size — 256 matches MapLibre tileSize for seamless rendering.
+# 512 retina rendering possible but needs separate performance tuning first.
+TILE_RENDER_SIZE = 256
 # Thread pool for CPU-bound relief tile rendering (rasterio reproject + numpy MDOW)
 _relief_pool = ThreadPoolExecutor(max_workers=4)
 
