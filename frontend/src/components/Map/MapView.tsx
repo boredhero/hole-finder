@@ -51,6 +51,7 @@ const SATELLITE_STYLE = {
       maxzoom: 18,
       attribution: 'CARTO',
     },
+    'relief-hillshade': RELIEF_SOURCE,
     'terrain-source': TERRAIN_SOURCE,
   },
   layers: [
@@ -58,6 +59,12 @@ const SATELLITE_STYLE = {
       id: 'satellite',
       type: 'raster' as const,
       source: 'esri-satellite',
+    },
+    {
+      id: 'relief-hillshade',
+      type: 'raster' as const,
+      source: 'relief-hillshade',
+      paint: { 'raster-opacity': 0.55 },
     },
     {
       id: 'labels',
@@ -107,6 +114,7 @@ const TOPO_STYLE = {
       maxzoom: 17,
       attribution: 'OpenTopoMap',
     },
+    'relief-hillshade': RELIEF_SOURCE,
     'terrain-source': TERRAIN_SOURCE,
   },
   layers: [
@@ -114,6 +122,12 @@ const TOPO_STYLE = {
       id: 'topo-base',
       type: 'raster' as const,
       source: 'opentopomap',
+    },
+    {
+      id: 'relief-hillshade',
+      type: 'raster' as const,
+      source: 'relief-hillshade',
+      paint: { 'raster-opacity': 0.45 },
     },
   ],
 };
@@ -430,6 +444,13 @@ function MVTLayerManager() {
     // throw DOMException during the style transition.
     map.on('style.load', () => {
       requestAnimationFrame(() => {
+        // For external styles (Dark), relief source isn't baked in
+        try {
+          if (!map.getSource('relief-hillshade')) {
+            map.addSource('relief-hillshade', RELIEF_SOURCE);
+            map.addLayer({ id: 'relief-hillshade', type: 'raster', source: 'relief-hillshade', paint: { 'raster-opacity': 0.35 } });
+          }
+        } catch { /* race */ }
         try {
           addMVTLayers(map);
         } catch (e) {
