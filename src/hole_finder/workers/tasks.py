@@ -277,7 +277,7 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
             ctx["tiles_found"] = len(tiles)
 
         if not tiles:
-            _update_job("FAILED", 0, "No LiDAR data available for this area. Try a different location — coverage varies.", summary={"tiles": 0, "detections": 0})
+            _update_job("FAILED", 0, "No LiDAR data found in this area. Try zooming out to a larger area or panning to a different location.", summary={"tiles": 0, "detections": 0})
             return
 
         # Compute tile limit early — needed for stale clearing and download

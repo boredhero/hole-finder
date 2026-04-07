@@ -43,10 +43,21 @@ export default function PlaygroundPage() {
     if (!bbox) return;
     const lat = (bbox[1] + bbox[3]) / 2;
     const lon = (bbox[0] + bbox[2]) / 2;
+    // Derive radius from viewport — what you see is what gets scanned
+    const latSpanKm = (bbox[3] - bbox[1]) * 111.32;
+    const lonSpanKm = (bbox[2] - bbox[0]) * 111.32 * Math.cos(lat * Math.PI / 180);
+    const radiusKm = Math.min(latSpanKm, lonSpanKm) / 2;
+    // If viewport is too wide, ask user to zoom in
+    if (radiusKm > 10) {
+      setScanError('Zoom in a bit — the visible area is too large to scan. Try zoom 12 or higher.');
+      setScanStatus('failed');
+      setTimeout(() => setScanStatus('idle'), 5000);
+      return;
+    }
     setScanStatus('scanning');
     setScanError(null);
     try {
-      const { job_id } = await startConsumerScan(lat, lon, 10);
+      const { job_id } = await startConsumerScan(lat, lon, Math.max(0.5, radiusKm));
       setActiveJobId(job_id);
     } catch (err: any) {
       setScanError(err?.message || 'Failed to start scan');
