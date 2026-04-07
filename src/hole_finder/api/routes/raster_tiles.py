@@ -28,7 +28,7 @@ from hole_finder.utils.logging import log
 from concurrent.futures import ThreadPoolExecutor
 
 TILE_RENDER_SIZE = 256
-_relief_pool = ThreadPoolExecutor(max_workers=4)
+_relief_pool = ThreadPoolExecutor(max_workers=8)
 
 # Seamless DEM mosaic VRT — rebuilt every 2 minutes to pick up new tiles
 _dem_vrt_path: str | None = None
