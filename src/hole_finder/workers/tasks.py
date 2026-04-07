@@ -438,19 +438,22 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                 result["error_type"] = "process"
                 return result
 
-            # Detect
+            # Detect — with per-phase timing
             t0 = time.perf_counter()
+            _timings = {}
             try:
                 log.info("detection_starting", tile=Path(tile_path).stem, dem=str(tile_result.dem_path), crs=tile_result.crs, derivatives=list(tile_result.derivative_paths.keys()))
+                _t = time.perf_counter()
                 candidates = runner.run_on_dem(
                     tile_result.dem_path,
                     tile_result.derivative_paths,
                 )
+                _timings["detection_passes_s"] = round(time.perf_counter() - _t, 3)
                 log.info("detection_raw", tile=Path(tile_path).stem, raw_candidates=len(candidates))
 
+                _t = time.perf_counter()
                 crs_code = tile_result.crs
                 transformer = Transformer.from_crs(f"EPSG:{crs_code}", "EPSG:4326", always_xy=True)
-                # Sanity check: transform a known point from the DEM bounds
                 import rasterio as _rio
                 with _rio.open(tile_result.dem_path) as _src:
                     _bnd = _src.bounds
@@ -466,7 +469,6 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                         and (c.morphometrics.get("depth_m", 0)
                              or c.morphometrics.get("lrm_anomaly_m", 0)) < 100]
                 log.info("detection_filtered", tile=Path(tile_path).stem, after_filter=len(good), before_filter=len(candidates))
-                # Keep only top 50 per tile, sorted by score
                 good.sort(key=lambda c: c.score, reverse=True)
                 good = good[:50]
 
@@ -479,22 +481,20 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                         wgs84_points.append(None)
                     else:
                         wgs84_points.append((lon, lat))
-                # Remove candidates with bad coords
                 paired = [(c, p) for c, p in zip(good, wgs84_points) if p is not None]
                 good = [c for c, _ in paired]
                 wgs84_points = [p for _, p in paired]
+                _timings["crs_transform_s"] = round(time.perf_counter() - _t, 3)
 
                 # Filter out detections on buildings using OSM data
+                _t = time.perf_counter()
                 if wgs84_points:
                     from hole_finder.detection.postprocess.building_filter import fetch_building_polygons
                     from shapely.prepared import prep as shapely_prep
                     from shapely.geometry import MultiPolygon
-
                     lons = [p[0] for p in wgs84_points]
                     lats = [p[1] for p in wgs84_points]
-                    buildings = fetch_building_polygons(
-                        min(lons), min(lats), max(lons), max(lats),
-                    )
+                    buildings = fetch_building_polygons(min(lons), min(lats), max(lons), max(lats))
                     if buildings:
                         merged = shapely_prep(MultiPolygon(buildings))
                         keep = []
@@ -502,18 +502,17 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                             if not merged.contains(Point(lon, lat)):
                                 keep.append((c, lon, lat))
                             else:
-                                log.info("building_filtered", lon=round(lon, 5), lat=round(lat, 5),
-                                         score=round(c.score, 2))
-                        log.info("building_filter_result",
-                                 before=len(good), after=len(keep),
-                                 removed=len(good) - len(keep))
+                                log.info("building_filtered", lon=round(lon, 5), lat=round(lat, 5), score=round(c.score, 2))
+                        log.info("building_filter_result", before=len(good), after=len(keep), removed=len(good) - len(keep))
                         good_with_coords = keep
                     else:
                         good_with_coords = list(zip(good, [p[0] for p in wgs84_points], [p[1] for p in wgs84_points]))
                 else:
                     good_with_coords = []
+                _timings["building_filter_s"] = round(time.perf_counter() - _t, 3)
 
-                # Filter out detections on roads, waterways, and railways (springs exempt from water)
+                # Filter out detections on roads, waterways, and railways
+                _t = time.perf_counter()
                 if good_with_coords:
                     from hole_finder.detection.postprocess.infrastructure_filter import filter_candidates_by_infrastructure
                     candidates_for_infra = [item[0] for item in good_with_coords]
@@ -521,8 +520,10 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                     lons_i = [c[0] for c in coords_for_infra]
                     lats_i = [c[1] for c in coords_for_infra]
                     good_with_coords = filter_candidates_by_infrastructure(candidates_for_infra, coords_for_infra, min(lons_i), min(lats_i), max(lons_i), max(lats_i))
+                _timings["infra_filter_s"] = round(time.perf_counter() - _t, 3)
 
                 # Store detections
+                _t = time.perf_counter()
                 log.info("storing_detections", tile=Path(tile_path).stem, count=len(good_with_coords))
                 async def _store():
                     stored = 0
@@ -554,12 +555,14 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                             stored += 1
                         await session.commit()
                     return stored
-
                 stored_count = asyncio.run(_store())
-                result["detect_s"] = round(time.perf_counter() - t0, 2)
+                _timings["db_store_s"] = round(time.perf_counter() - _t, 3)
+                _timings["total_detect_s"] = round(time.perf_counter() - t0, 3)
+                result["detect_s"] = _timings["total_detect_s"]
                 result["raw_candidates"] = len(candidates)
                 result["stored"] = stored_count
                 log.info("tile_detections_stored", tile=Path(tile_path).stem, stored=stored_count, raw=len(candidates), filtered=len(good))
+                log.info("tile_phase_timing", tile=Path(tile_path).name, process_s=result.get("process_s"), **_timings)
 
                 with _det_lock:
                     total_detections += stored_count
@@ -604,8 +607,8 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                      progress=f"{completed_tiles}/{len(downloaded)}")
             return result
 
-        # Each PDAL subprocess uses ~6 GB RAM. 5 × 6 GB = ~30 GB peak on 64 GB box.
-        PARALLEL_TILES = 5
+        # Each PDAL subprocess uses ~6 GB RAM. 6 × 6 GB = ~36 GB peak on 64 GB box.
+        PARALLEL_TILES = 6
         tile_results = []
         with profiler.stage("parallel_processing", parallel=PARALLEL_TILES) as pctx:
             with ThreadPoolExecutor(max_workers=PARALLEL_TILES) as executor:
