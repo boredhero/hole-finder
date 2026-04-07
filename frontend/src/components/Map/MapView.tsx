@@ -548,7 +548,7 @@ function CoordinateCopy() {
   );
 }
 
-const DEFAULT_VIEW = { longitude: -79.71, latitude: 39.80, zoom: 13, pitch: 45, bearing: -15 };
+const DEFAULT_VIEW = { longitude: -79.96, latitude: 40.50, zoom: 10, pitch: 45, bearing: -15 };
 
 export default function MapView() {
   const basemap = useStore((s) => s.basemap);
