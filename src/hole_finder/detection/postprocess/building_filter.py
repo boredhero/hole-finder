@@ -25,7 +25,8 @@ def _parse_polygons_from_elements(elements: list[dict]) -> list[Polygon]:
                     poly = Polygon(coords)
                     if poly.is_valid and poly.area > 0:
                         polygons.append(poly)
-                except Exception:
+                except Exception as e:
+                    log.debug("building_way_geom_parse_failed", element_id=el.get("id"), error=str(e))
                     continue
         elif el.get("type") == "relation":
             for member in el.get("members", []):
@@ -37,7 +38,8 @@ def _parse_polygons_from_elements(elements: list[dict]) -> list[Polygon]:
                             poly = Polygon(coords)
                             if poly.is_valid and poly.area > 0:
                                 polygons.append(poly)
-                        except Exception:
+                        except Exception as e:
+                            log.debug("building_relation_geom_parse_failed", element_id=el.get("id"), error=str(e))
                             continue
     return polygons
 

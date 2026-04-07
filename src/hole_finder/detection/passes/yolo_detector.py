@@ -12,6 +12,7 @@ import numpy as np
 from hole_finder.config import settings
 from hole_finder.detection.base import Candidate, DetectionPass, FeatureType, PassInput
 from hole_finder.detection.registry import register_pass
+from hole_finder.utils.logging import log
 
 # YOLO class index → our feature type
 YOLO_CLASS_MAP = {
@@ -97,7 +98,8 @@ class YOLODetectorPass(DetectionPass):
                 # Run inference
                 try:
                     results = model(patch, conf=confidence_threshold, verbose=False)
-                except Exception:
+                except Exception as e:
+                    log.debug("yolo_inference_failed", row=row, col=col, error=str(e))
                     continue
 
                 for result in results:

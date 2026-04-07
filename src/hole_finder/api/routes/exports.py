@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from hole_finder.api.deps import get_db
 from hole_finder.db.models import Detection, FeatureType
+from hole_finder.utils.logging import log
 
 router = APIRouter(tags=["exports"])
 
@@ -48,7 +49,8 @@ async def export_geojson(
         try:
             pt = to_shape(d.geometry)
             geom = {"type": "Point", "coordinates": [pt.x, pt.y]}
-        except Exception:
+        except Exception as e:
+            log.warning("geojson_export_geom_failed", detection_id=str(d.id), error=str(e))
             continue
 
         features.append({
@@ -104,7 +106,8 @@ async def export_csv(
         try:
             pt = to_shape(d.geometry)
             lat, lon = pt.y, pt.x
-        except Exception:
+        except Exception as e:
+            log.warning("csv_export_geom_failed", detection_id=str(d.id), error=str(e))
             continue
 
         writer.writerow([

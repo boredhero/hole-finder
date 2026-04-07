@@ -90,6 +90,7 @@ def get_gpu_info() -> dict[str, Any]:
             )
             info["backend"] = "ROCm" if hasattr(torch.version, "hip") and torch.version.hip else "CUDA"
     except ImportError:
+        log.debug("torch_not_available")
         pass
     try:
         import cupy

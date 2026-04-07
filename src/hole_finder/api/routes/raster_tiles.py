@@ -73,12 +73,12 @@ async def get_raster_tile(
     y: int,
 ):
     """Serve a raster tile as PNG.
-
     Supported layers: hillshade, slope, svf, lrm
-
-    Tiles are served from pre-rendered cache. If not cached,
-    returns 404 (tiles must be pre-generated during processing).
+    Terrain layer is handled by the composited terrain endpoint.
     """
+    # FastAPI matches {layer} before /terrain/ — redirect terrain requests
+    if layer == "terrain":
+        return await get_composited_terrain_tile(z, x, y)
     # Check tile cache
     cache_dir = settings.data_dir / "tile_cache" / layer / str(z) / str(x)
     tile_path = cache_dir / f"{y}.png"
@@ -290,7 +290,8 @@ async def warm_terrain_cache(
                 png_bytes = _render_terrain_tile_from_dem(dem_path, z, x, y)
                 _atomic_write(tile_path, png_bytes)
                 return "rendered"
-            except Exception:
+            except Exception as e:
+                log.warning("warm_render_failed", dem=str(dem_path)[:80], z=z, x=x, y=y, error=str(e))
                 pass
         async with sem:
             try:
@@ -298,7 +299,8 @@ async def warm_terrain_cache(
                 if resp.status_code == 200 and len(resp.content) >= _MIN_PNG_BYTES:
                     _atomic_write(tile_path, resp.content)
                     return "proxied"
-            except Exception:
+            except Exception as e:
+                log.warning("warm_aws_proxy_failed", z=z, x=x, y=y, error=str(e))
                 pass
         return "failed"
     tasks = []

@@ -54,7 +54,8 @@ async def load_md_karst(session: AsyncSession, data_dir: str) -> int:
 
             try:
                 geom = shape(geom_data)
-            except Exception:
+            except Exception as e:
+                log.debug("geom_parse_failed", source="md_karst", error=str(e))
                 continue
 
             if geom.geom_type != "Point":
