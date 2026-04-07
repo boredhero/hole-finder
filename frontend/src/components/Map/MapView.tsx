@@ -64,7 +64,7 @@ const SATELLITE_STYLE = {
       id: 'relief-hillshade',
       type: 'raster' as const,
       source: 'relief-hillshade',
-      paint: { 'raster-opacity': 0.35 },
+      paint: { 'raster-opacity': 0.55 },
     },
     {
       id: 'labels',
