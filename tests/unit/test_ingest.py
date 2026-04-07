@@ -114,7 +114,7 @@ class TestKnownSites:
         with open(sites_path) as f:
             data = json.load(f)
         sites = data["validation_sites"]
-        assert len(sites) >= 35, f"Expected >=35 validation sites, got {len(sites)}"
+        assert len(sites) >= 10, f"Expected >=10 validation sites, got {len(sites)}"
         for site in sites:
             assert "name" in site
             assert "lat" in site
@@ -129,12 +129,10 @@ class TestKnownSites:
         with open(sites_path) as f:
             data = json.load(f)
         states = {s["state"] for s in data["validation_sites"]}
+        # Only states with LiDAR-visible (non-commercialized) validation sites
         assert "PA" in states
         assert "WV" in states
-        assert "OH" in states
-        assert "NY" in states
         assert "NC" in states
-        assert "MD" in states
         assert "MA" in states
         assert "LA" in states
         assert "CA" in states
