@@ -78,27 +78,20 @@ const RELIEF_STYLE = {
   version: 8 as const,
   glyphs: MAPLIBRE_GLYPHS,
   sources: {
-    'topo-contours': {
-      type: 'raster' as const,
-      tiles: ['https://tile.opentopomap.org/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      maxzoom: 17,
-      attribution: 'OpenTopoMap',
-    },
     'relief-hillshade': RELIEF_SOURCE,
     'terrain-source': TERRAIN_SOURCE,
   },
   layers: [
     {
-      id: 'topo-base',
-      type: 'raster' as const,
-      source: 'topo-contours',
+      id: 'void-background',
+      type: 'background' as const,
+      paint: { 'background-color': '#1a1a1e', 'background-opacity': 1 },
     },
     {
       id: 'relief-hillshade',
       type: 'raster' as const,
       source: 'relief-hillshade',
-      paint: { 'raster-opacity': 0.85 },
+      paint: { 'raster-opacity': 1.0 },
     },
   ],
 };
