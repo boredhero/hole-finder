@@ -14,6 +14,10 @@ window.addEventListener('error', (e) => {
   if (e.error instanceof DOMException && e.error.message?.includes('usable')) {
     e.preventDefault();
   }
+  // MapLibre NaN coordinate error during terrain exaggeration transitions — non-fatal
+  if (e.error?.message?.includes('Invalid LngLat')) {
+    e.preventDefault();
+  }
 });
 window.addEventListener('unhandledrejection', (e) => {
   if (e.reason instanceof DOMException && e.reason.message?.includes('usable')) {

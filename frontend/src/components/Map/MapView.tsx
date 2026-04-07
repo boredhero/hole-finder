@@ -136,13 +136,16 @@ function DeckGLOverlay(props: { layers: any[] }) {
 /** Manages 3D terrain via direct map.setTerrain() call with try-catch.
  *  Must re-apply terrain after EVERY basemap style swap because MapLibre
  *  destroys all sources/layers/terrain on style replacement.
- *  Listens for style.load to catch async style changes too. */
+ *  Debounces exaggeration changes to avoid NaN coordinate crash during
+ *  rapid slider adjustment (MapLibre projection matrix race). */
 function TerrainController() {
   const { current: mapRef } = useMap();
   const show3DTerrain = useStore((s) => s.show3DTerrain);
   const terrainReady = useStore((s) => s.terrainReady);
   const terrainExaggeration = useStore((s) => s.terrainExaggeration);
   const basemap = useStore((s) => s.basemap);
+  const exaggerationRef = useRef(terrainExaggeration);
+  exaggerationRef.current = terrainExaggeration;
   useEffect(() => {
     const map = mapRef?.getMap();
     if (!map) return;
@@ -150,13 +153,12 @@ function TerrainController() {
       requestAnimationFrame(() => {
         try {
           if (!map.isStyleLoaded()) return;
-          // Ensure terrain source exists (external styles like Dark don't include it)
           if (!map.getSource('terrain-source')) {
             try { map.addSource('terrain-source', TERRAIN_SOURCE); } catch { /* race */ }
           }
           if (!map.getSource('terrain-source')) return;
           if (show3DTerrain && terrainReady) {
-            map.setTerrain({ source: 'terrain-source', exaggeration: terrainExaggeration });
+            map.setTerrain({ source: 'terrain-source', exaggeration: exaggerationRef.current });
           } else {
             map.setTerrain(null);
           }
@@ -166,7 +168,20 @@ function TerrainController() {
     applyTerrain();
     map.on('style.load', applyTerrain);
     return () => { map.off('style.load', applyTerrain); };
-  }, [mapRef, show3DTerrain, terrainReady, terrainExaggeration, basemap]);
+  }, [mapRef, show3DTerrain, terrainReady, basemap]);
+  // Debounced exaggeration updates — prevents NaN crash from rapid slider changes
+  useEffect(() => {
+    const map = mapRef?.getMap();
+    if (!map || !show3DTerrain || !terrainReady) return;
+    const timer = setTimeout(() => {
+      try {
+        if (map.isStyleLoaded() && map.getSource('terrain-source')) {
+          map.setTerrain({ source: 'terrain-source', exaggeration: terrainExaggeration });
+        }
+      } catch { /* suppress during transitions */ }
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [terrainExaggeration, mapRef, show3DTerrain, terrainReady]);
   return null;
 }
 
