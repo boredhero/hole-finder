@@ -107,8 +107,9 @@ def _elevation_colormap(elevation: np.ndarray) -> np.ndarray:
     return rgb
 
 
-def _render_relief_tile_from_dem(dem_path: str, z: int, x: int, y: int) -> bytes | None:
-    """Render a 512x512 MDOW relief tile: multi-directional hillshade × elevation color.
+def _render_relief_tile(dem_paths: list[str], z: int, x: int, y: int) -> bytes | None:
+    """Render a MDOW relief tile compositing ALL overlapping DEMs.
+    Fills gaps between adjacent COPC tiles by layering multiple DEM sources.
     Returns RGBA PNG with transparency outside LiDAR coverage."""
     import rasterio
     from rasterio.warp import Resampling, reproject
@@ -122,20 +123,23 @@ def _render_relief_tile_from_dem(dem_path: str, z: int, x: int, y: int) -> bytes
     dx = (east - west) / size * pad
     dy = (north - south) / size * pad
     dst_transform = from_bounds(west - dx, south - dy, east + dx, north + dy, full, full)
-    try:
-        with rasterio.open(dem_path) as src:
-            dst_array = np.full((1, full, full), np.nan, dtype=np.float32)
-            reproject(source=rasterio.band(src, 1), destination=dst_array, dst_transform=dst_transform, dst_crs="EPSG:4326", dst_nodata=np.nan, resampling=Resampling.cubic)
-    except Exception as e:
-        log.warning("relief_reproject_failed", dem=dem_path, z=z, x=x, y=y, error=str(e))
-        return None
-    elev = dst_array[0]
+    # Composite elevation from all overlapping DEMs (later overwrites earlier where valid)
+    elev = np.full((full, full), np.nan, dtype=np.float32)
+    for dem_path in dem_paths:
+        try:
+            buf = np.full((1, full, full), np.nan, dtype=np.float32)
+            with rasterio.open(dem_path) as src:
+                reproject(source=rasterio.band(src, 1), destination=buf, dst_transform=dst_transform, dst_crs="EPSG:4326", dst_nodata=np.nan, resampling=Resampling.cubic)
+            patch = buf[0]
+            patch_valid = np.isfinite(patch)
+            elev = np.where(patch_valid & ~np.isfinite(elev), patch, elev)
+        except Exception as e:
+            log.warning("relief_reproject_failed", dem=dem_path, z=z, x=x, y=y, error=str(e))
     valid = np.isfinite(elev)
     if not valid.any():
         return None
     # Fill nodata with median elevation so gradients at DEM edges are near-zero
-    # (filling with 0.0 creates a false 290m cliff → dark shadow artifact at seams)
-    fill_val = float(np.nanmedian(elev[valid])) if valid.any() else 0.0
+    fill_val = float(np.nanmedian(elev[valid]))
     elev_clean = np.where(valid, elev, fill_val)
     # Cell size in meters at tile center latitude
     center_lat = (south + north) / 2
@@ -147,19 +151,17 @@ def _render_relief_tile_from_dem(dem_path: str, z: int, x: int, y: int) -> bytes
     cell_y = pixel_deg_y * m_per_deg_y
     hs = _multidirectional_hillshade(elev_clean, cell_x, cell_y)
     color_rgb = _elevation_colormap(elev_clean)
-    # Multiply composite: color × (hillshade / 255)
     hs_f = hs.astype(np.float32) / 255.0
     composited = np.zeros((*elev.shape, 4), dtype=np.uint8)
     composited[..., 0] = np.clip(color_rgb[..., 0].astype(np.float32) * hs_f, 0, 255).astype(np.uint8)
     composited[..., 1] = np.clip(color_rgb[..., 1].astype(np.float32) * hs_f, 0, 255).astype(np.uint8)
     composited[..., 2] = np.clip(color_rgb[..., 2].astype(np.float32) * hs_f, 0, 255).astype(np.uint8)
     composited[..., 3] = np.where(valid, 255, 0).astype(np.uint8)
-    # Crop padding → final tile
     tile = composited[pad:pad + size, pad:pad + size]
     img = Image.fromarray(tile, mode="RGBA")
-    buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True)
-    return buf.getvalue()
+    buf_io = io.BytesIO()
+    img.save(buf_io, format="PNG", optimize=True)
+    return buf_io.getvalue()
 
 
 TRANSPARENT_PNG = (
@@ -186,18 +188,18 @@ async def get_raster_tile(layer: str, z: int, x: int, y: int):
         if len(data) >= _MIN_PNG_BYTES:
             return Response(content=data, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
         tile_path.unlink(missing_ok=True)
-    # On-the-fly rendering for hillshade/relief layer — runs in thread pool
-    # so multiple tiles render concurrently instead of serializing
+    # On-the-fly rendering for hillshade/relief layer — composites ALL overlapping
+    # DEMs to fill gaps between COPC tiles. Runs in thread pool for concurrency.
     if layer == "hillshade":
         bbox = _tile_to_bbox(z, x, y)
-        dem_path = _find_dem_for_tile(*bbox)
-        if dem_path:
+        dem_paths = _find_all_dems_for_tile(*bbox)
+        if dem_paths:
             try:
                 loop = asyncio.get_event_loop()
-                png_bytes = await loop.run_in_executor(_relief_pool, _render_relief_tile_from_dem, dem_path, z, x, y)
+                png_bytes = await loop.run_in_executor(_relief_pool, _render_relief_tile, dem_paths, z, x, y)
                 if png_bytes:
                     _atomic_write(tile_path, png_bytes)
-                    log.info("relief_tile_rendered", z=z, x=x, y=y, bytes=len(png_bytes))
+                    log.info("relief_tile_rendered", z=z, x=x, y=y, dems=len(dem_paths), bytes=len(png_bytes))
                     return Response(content=png_bytes, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
             except Exception as e:
                 log.error("relief_render_failed", z=z, x=x, y=y, error=str(e), error_type=type(e).__name__)
@@ -257,14 +259,11 @@ def _scan_dem_bounds() -> dict[str, tuple[float, float, float, float]]:
 
 def _find_dem_for_tile(west: float, south: float, east: float, north: float) -> str | None:
     """Find a processed DEM that overlaps the given WGS84 bbox.
-    Returns the DEM with the most overlap (best coverage for this tile).
-    rasterio.reproject handles partial coverage gracefully — pixels outside
-    the DEM get nodata (0m elevation), so partial overlap is fine."""
+    Returns the DEM with the most overlap (best coverage for this tile)."""
     bounds = _scan_dem_bounds()
     best_path = None
     best_overlap = 0.0
     for path, (dw, ds, de, dn) in bounds.items():
-        # Check bbox intersection
         ow = max(dw, west)
         os_ = max(ds, south)
         oe = min(de, east)
@@ -275,6 +274,22 @@ def _find_dem_for_tile(west: float, south: float, east: float, north: float) -> 
                 best_overlap = overlap
                 best_path = path
     return best_path
+
+
+def _find_all_dems_for_tile(west: float, south: float, east: float, north: float) -> list[str]:
+    """Find ALL processed DEMs that overlap the given WGS84 bbox, sorted by overlap area."""
+    bounds = _scan_dem_bounds()
+    results = []
+    for path, (dw, ds, de, dn) in bounds.items():
+        ow = max(dw, west)
+        os_ = max(ds, south)
+        oe = min(de, east)
+        on = min(dn, north)
+        if ow < oe and os_ < on:
+            overlap = (oe - ow) * (on - os_)
+            results.append((path, overlap))
+    results.sort(key=lambda x: x[1], reverse=True)
+    return [r[0] for r in results]
 
 
 def _render_terrain_tile_from_dem(dem_path: str, z: int, x: int, y: int) -> bytes:
