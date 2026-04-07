@@ -11,7 +11,7 @@ const ALL_TYPES: FeatureType[] = [
 
 const BASEMAPS: { value: Basemap; label: string }[] = [
   { value: 'satellite', label: 'Satellite' },
-  { value: 'lidar', label: 'LiDAR' },
+  { value: 'relief', label: 'Relief' },
   { value: 'topo', label: 'Topo' },
   { value: 'dark', label: 'Dark' },
 ];

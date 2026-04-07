@@ -101,7 +101,7 @@ export const useStore = create<AppState>((set) => ({
   setTerrainReady: (v) => set({ terrainReady: v }),
   terrainExaggeration: 1.5,
   setTerrainExaggeration: (v) => set({ terrainExaggeration: v }),
-  showTileCoverage: false,
+  showTileCoverage: true,
   toggleTileCoverage: () => set((s) => ({ showTileCoverage: !s.showTileCoverage })),
 
   viewState: null,
