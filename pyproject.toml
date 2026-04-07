@@ -1,6 +1,6 @@
 [project]
 name = "hole-finder"
-version = "0.9.1"
+version = "__HOLEFINDER_VERSION__"
 description = "LiDAR-based terrain anomaly detection platform for caves, mines, and sinkholes"
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
