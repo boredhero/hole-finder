@@ -122,7 +122,7 @@ def _scan_dem_bounds() -> dict[str, tuple[float, float, float, float]]:
     processed_dir = settings.processed_dir
     if not processed_dir.exists():
         _dem_bounds_cache = bounds
-    _dem_bounds_cache_time = _time.time()
+        _dem_bounds_cache_time = _time.time()
         return bounds
 
     for dem_path in processed_dir.glob("*/*_dem.tif"):
