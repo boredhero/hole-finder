@@ -67,7 +67,8 @@ def fetch_infrastructure_polygons(
                     railways.append(line.buffer(RAIL_BUFFER_DEG))
                 else:
                     continue
-            except Exception:
+            except Exception as e:
+                log.debug("infra_geom_parse_failed", element_type=el.get("type"), error=str(e))
                 continue
         # Handle relations (multipolygon water bodies like lakes)
         elif el.get("type") == "relation" and members:

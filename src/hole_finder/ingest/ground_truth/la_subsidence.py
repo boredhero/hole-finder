@@ -95,7 +95,8 @@ async def load_la_subsidence(session: AsyncSession, data_dir: str) -> int:
 
             try:
                 geom = shape(geom_data)
-            except Exception:
+            except Exception as e:
+                log.debug("geom_parse_failed", source="la_subsidence", error=str(e))
                 continue
 
             if geom.geom_type != "Point":

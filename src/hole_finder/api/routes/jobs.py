@@ -12,6 +12,7 @@ from hole_finder.api.deps import get_db
 from hole_finder.api.schemas import JobCreate, JobList, JobStatus
 from hole_finder.db.models import Job, JobType
 from hole_finder.db.models import JobStatus as JobStatusEnum
+from hole_finder.utils.logging import log
 
 router = APIRouter(tags=["jobs"])
 
@@ -47,7 +48,8 @@ async def list_jobs(
         try:
             status_enum = JobStatusEnum(status.upper())
             stmt = stmt.where(Job.status == status_enum)
-        except ValueError:
+        except ValueError as e:
+            log.debug("invalid_job_status_filter", status=status, error=str(e))
             pass
 
     result = await db.execute(stmt)

@@ -41,7 +41,8 @@ def scan_data_dir(data_dir: Path) -> list[FileEntry]:
                     size_bytes=stat.st_size,
                     last_access=stat.st_atime,
                 ))
-            except (OSError, FileNotFoundError):
+            except (OSError, FileNotFoundError) as e:
+                log.debug("file_stat_failed", path=str(p), error=str(e))
                 continue
     # Sort oldest-accessed first (LRU eviction order)
     entries.sort(key=lambda e: e.last_access)
@@ -162,7 +163,8 @@ def get_storage_stats(data_dir: Path) -> dict:
         rel = str(p.relative_to(data_dir))
         try:
             sz = p.stat().st_size
-        except OSError:
+        except OSError as e:
+            log.debug("storage_stat_failed", path=str(p), error=str(e))
             continue
 
         if rel.startswith("raw/"):
@@ -185,7 +187,8 @@ def get_storage_stats(data_dir: Path) -> dict:
     for p in all_files - categorized:
         try:
             sz = p.stat().st_size
-        except OSError:
+        except OSError as e:
+            log.debug("storage_stat_failed", path=str(p), error=str(e))
             continue
         categories["other"]["bytes"] += sz
         categories["other"]["files"] += 1
@@ -208,5 +211,6 @@ def _remove_empty_dirs(root: Path) -> None:
         if not dirnames and not filenames and Path(dirpath) != root:
             try:
                 Path(dirpath).rmdir()
-            except OSError:
+            except OSError as e:
+                log.debug("rmdir_failed", path=dirpath, error=str(e))
                 pass

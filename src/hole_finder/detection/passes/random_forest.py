@@ -8,6 +8,7 @@ from shapely.geometry import Point
 
 from hole_finder.config import settings
 from hole_finder.detection.base import Candidate, DetectionPass, FeatureType, PassInput
+from hole_finder.utils.logging import log
 from hole_finder.detection.postprocess.morphometrics import (
     compute_area,
     compute_circularity,
@@ -110,7 +111,8 @@ class RandomForestPass(DetectionPass):
             try:
                 proba = model.predict_proba(features.reshape(1, -1))[0]
                 prob_positive = float(proba[1]) if len(proba) > 1 else float(proba[0])
-            except Exception:
+            except Exception as e:
+                log.debug("rf_predict_failed", region_index=i, error=str(e))
                 continue
 
             if prob_positive < min_probability:

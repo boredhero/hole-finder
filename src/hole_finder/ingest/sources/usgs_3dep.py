@@ -99,7 +99,8 @@ class USGS3DEPSource(DataSource):
             if dt_str and len(dt_str) >= 4:
                 try:
                     year = int(dt_str[:4])
-                except ValueError:
+                except ValueError as e:
+                    log.debug("stac_year_parse_failed", datetime_str=dt_str[:20], error=str(e))
                     pass
 
             return TileInfo(

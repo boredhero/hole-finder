@@ -122,7 +122,8 @@ async def load_ca_blm_aml(session: AsyncSession, data_dir: str) -> int:
 
             try:
                 geom = shape(geom_data)
-            except Exception:
+            except Exception as e:
+                log.debug("geom_parse_failed", source="ca_blm_aml", error=str(e))
                 continue
 
             if geom.geom_type != "Point":
