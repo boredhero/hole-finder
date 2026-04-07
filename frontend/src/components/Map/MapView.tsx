@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Map, { NavigationControl, ScaleControl, GeolocateControl, useMap } from 'react-map-gl/maplibre';
 import { MapboxOverlay } from '@deck.gl/mapbox';
 import { HeatmapLayer } from '@deck.gl/aggregation-layers';
-import { TerrainLayer } from '@deck.gl/geo-layers';
 import { useControl } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -13,6 +12,14 @@ import DrawControl from './DrawControl';
 import type { Basemap, Detection } from '../../types';
 import { FEATURE_COLORS } from '../../types';
 
+const TERRAIN_SOURCE = {
+  type: 'raster-dem' as const,
+  tiles: ['/api/raster/terrain/{z}/{x}/{y}.png'],
+  tileSize: 256,
+  encoding: 'terrarium' as const,
+  minzoom: 7,
+  maxzoom: 15,
+};
 
 const MAPLIBRE_GLYPHS = 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf';
 
@@ -44,20 +51,13 @@ const SATELLITE_STYLE = {
       maxzoom: 18,
       attribution: 'CARTO',
     },
-    'relief-hillshade': RELIEF_SOURCE,
-    // terrain-source removed — deck.gl TerrainLayer handles 3D terrain now
+    'terrain-source': TERRAIN_SOURCE,
   },
   layers: [
     {
       id: 'satellite',
       type: 'raster' as const,
       source: 'esri-satellite',
-    },
-    {
-      id: 'relief-hillshade',
-      type: 'raster' as const,
-      source: 'relief-hillshade',
-      paint: { 'raster-opacity': 0.55 },
     },
     {
       id: 'labels',
@@ -79,7 +79,7 @@ const RELIEF_STYLE = {
       attribution: 'OpenTopoMap',
     },
     'relief-hillshade': RELIEF_SOURCE,
-    // terrain-source removed — deck.gl TerrainLayer handles 3D terrain now
+    'terrain-source': TERRAIN_SOURCE,
   },
   layers: [
     {
@@ -107,20 +107,13 @@ const TOPO_STYLE = {
       maxzoom: 17,
       attribution: 'OpenTopoMap',
     },
-    'relief-hillshade': RELIEF_SOURCE,
-    // terrain-source removed — deck.gl TerrainLayer handles 3D terrain now
+    'terrain-source': TERRAIN_SOURCE,
   },
   layers: [
     {
       id: 'topo-base',
       type: 'raster' as const,
       source: 'opentopomap',
-    },
-    {
-      id: 'relief-hillshade',
-      type: 'raster' as const,
-      source: 'relief-hillshade',
-      paint: { 'raster-opacity': 0.45 },
     },
   ],
 };
@@ -144,28 +137,54 @@ function DeckGLOverlay(props: { layers: any[] }) {
   return null;
 }
 
-// Terrarium encoding: elevation = R * 256 + G + B / 256 - 32768
-const TERRARIUM_DECODER = { rScaler: 256, gScaler: 1, bScaler: 1 / 256, offset: -32768 };
-
-/** Build a deck.gl TerrainLayer using our LiDAR elevation + hillshade tiles.
- *  Replaces MapLibre's setTerrain() which has unfixable seam artifacts
- *  (maplibre/maplibre-gl-js#4991). deck.gl uses Martini RTIN mesh generation
- *  with skirt geometry that produces cleaner tile boundaries. */
-function useTerrainLayer(basemap: string, exaggeration: number): TerrainLayer | null {
-  const texture = basemap === 'satellite' ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}' : '/api/raster/hillshade/{z}/{x}/{y}.png';
-  return new TerrainLayer({
-    id: 'terrain-3d',
-    elevationData: '/api/raster/terrain/{z}/{x}/{y}.png',
-    texture,
-    elevationDecoder: TERRARIUM_DECODER,
-    meshMaxError: 4.0,
-    minZoom: 10,
-    maxZoom: 18,
-    elevationScale: exaggeration,
-    color: [200, 200, 200],
-    material: { ambient: 0.6, diffuse: 0.8, shininess: 20 },
-    operation: 'terrain+draw' as any,
-  });
+/** Manages 3D terrain via MapLibre native setTerrain() with try-catch.
+ *  Re-applies after every basemap style swap (MapLibre destroys terrain on style change).
+ *  Debounces exaggeration to prevent NaN crash from rapid slider adjustment. */
+function TerrainController() {
+  const { current: mapRef } = useMap();
+  const show3DTerrain = useStore((s) => s.show3DTerrain);
+  const terrainReady = useStore((s) => s.terrainReady);
+  const terrainExaggeration = useStore((s) => s.terrainExaggeration);
+  const basemap = useStore((s) => s.basemap);
+  const exaggerationRef = useRef(terrainExaggeration);
+  exaggerationRef.current = terrainExaggeration;
+  useEffect(() => {
+    const map = mapRef?.getMap();
+    if (!map) return;
+    const applyTerrain = () => {
+      requestAnimationFrame(() => {
+        try {
+          if (!map.isStyleLoaded()) return;
+          if (!map.getSource('terrain-source')) {
+            try { map.addSource('terrain-source', TERRAIN_SOURCE); } catch { /* race */ }
+          }
+          if (!map.getSource('terrain-source')) return;
+          if (show3DTerrain && terrainReady) {
+            map.setTerrain({ source: 'terrain-source', exaggeration: exaggerationRef.current });
+          } else {
+            map.setTerrain(null);
+          }
+        } catch { /* suppress DOMException during style transitions */ }
+      });
+    };
+    applyTerrain();
+    map.on('style.load', applyTerrain);
+    return () => { map.off('style.load', applyTerrain); };
+  }, [mapRef, show3DTerrain, terrainReady, basemap]);
+  // Debounced exaggeration updates — prevents NaN crash from rapid slider changes
+  useEffect(() => {
+    const map = mapRef?.getMap();
+    if (!map || !show3DTerrain || !terrainReady) return;
+    const timer = setTimeout(() => {
+      try {
+        if (map.isStyleLoaded() && map.getSource('terrain-source')) {
+          map.setTerrain({ source: 'terrain-source', exaggeration: terrainExaggeration });
+        }
+      } catch { /* suppress during transitions */ }
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [terrainExaggeration, mapRef, show3DTerrain, terrainReady]);
+  return null;
 }
 
 function FlyToHandler() {
@@ -411,13 +430,6 @@ function MVTLayerManager() {
     // throw DOMException during the style transition.
     map.on('style.load', () => {
       requestAnimationFrame(() => {
-        // For external styles (Dark), relief source isn't baked in
-        try {
-          if (!map.getSource('relief-hillshade')) {
-            map.addSource('relief-hillshade', RELIEF_SOURCE);
-            map.addLayer({ id: 'relief-hillshade', type: 'raster', source: 'relief-hillshade', paint: { 'raster-opacity': 0.35 } });
-          }
-        } catch { /* race */ }
         try {
           addMVTLayers(map);
         } catch (e) {
@@ -587,16 +599,12 @@ const DEFAULT_VIEW = { longitude: -79.96, latitude: 40.50, zoom: 10, pitch: 45, 
 export default function MapView() {
   const basemap = useStore((s) => s.basemap);
   const showHeatmap = useStore((s) => s.showHeatmap);
-  const terrainExaggeration = useStore((s) => s.terrainExaggeration);
   const setBbox = useStore((s) => s.setBbox);
   const drawingAOI = useStore((s) => s.drawingAOI);
   const setDrawnAOI = useStore((s) => s.setDrawnAOI);
   const storedViewState = useStore((s) => s.viewState);
   const setViewState = useStore((s) => s.setViewState);
   const setSearchStale = useStore((s) => s.setSearchStale);
-
-  // deck.gl TerrainLayer replaces MapLibre's setTerrain (no seam artifacts)
-  const terrainLayer = useTerrainLayer(basemap, terrainExaggeration);
 
   // Heatmap still uses deck.gl + useDetections (playground only)
   const { data: detections = [] } = useDetections();
@@ -652,7 +660,8 @@ export default function MapView() {
         map.fire('holefinder:ready');
       }}
     >
-      <DeckGLOverlay layers={[...(terrainLayer ? [terrainLayer] : []), ...heatmapLayers]} />
+      {heatmapLayers.length > 0 && <DeckGLOverlay layers={heatmapLayers} />}
+      <TerrainController />
       <MVTLayerManager />
       <TileCoverageLayer />
       <CoordinateCopy />
