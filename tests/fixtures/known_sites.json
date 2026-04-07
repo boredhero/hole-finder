@@ -9,6 +9,7 @@
     {"name": "Lost River Caverns", "lat": 40.5808, "lon": -75.331, "type": "cave_entrance", "state": "PA", "county": "Northampton", "confidence": "high"},
     {"name": "Indian Echo Caverns", "lat": 40.2541, "lon": -76.7171, "type": "cave_entrance", "state": "PA", "county": "Dauphin", "confidence": "high"},
     {"name": "Harlansburg Cave", "lat": 41.1, "lon": -80.4, "type": "cave_entrance", "state": "PA", "county": "Lawrence", "confidence": "medium"},
+    {"name": "Allegheny Cemetery Cave", "lat": 40.4754, "lon": -79.9460, "type": "cave_entrance", "state": "PA", "county": "Allegheny", "confidence": "very_high", "notes": "Field-verified 2026-04-02. Bedding plane cave entrance in exposed Pittsburgh Formation sandstone/limestone, wooded unused section of Allegheny Cemetery, Lawrenceville. Associated sinkhole depression and root-throw nearby. Undocumented — no geological survey or cave registry entry exists."},
 
     {"name": "Tour-Ed Mine", "lat": 40.6175, "lon": -79.7605, "type": "mine_portal", "state": "PA", "county": "Allegheny", "confidence": "very_high"},
     {"name": "Pioneer Tunnel", "lat": 40.88, "lon": -76.13, "type": "mine_portal", "state": "PA", "county": "Schuylkill", "confidence": "medium"},
