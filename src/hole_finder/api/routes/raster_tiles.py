@@ -229,9 +229,13 @@ async def get_composited_terrain_tile(z: int, x: int, y: int):
         if len(data) >= _MIN_PNG_BYTES:
             return Response(content=data, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
         tile_path.unlink(missing_ok=True)
-    # 2. Try LiDAR DEM
+    # 2. Try LiDAR DEM (rescan if cache is empty — may have been populated before DEMs existed)
+    global _dem_bounds_cache
     bbox = _tile_to_bbox(z, x, y)
     dem_path = _find_dem_for_tile(*bbox)
+    if not dem_path and _dem_bounds_cache is not None and len(_dem_bounds_cache) == 0:
+        _dem_bounds_cache = None  # force rescan on next call
+        dem_path = _find_dem_for_tile(*bbox)
     if dem_path:
         try:
             png_bytes = _render_terrain_tile_from_dem(dem_path, z, x, y)
@@ -239,12 +243,11 @@ async def get_composited_terrain_tile(z: int, x: int, y: int):
             return Response(content=png_bytes, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
         except Exception as e:
             log.warning("terrain_render_failed", dem=dem_path, z=z, x=x, y=y, error=str(e))
-    # 3. Proxy from AWS (shared client with connection pooling)
+    # 3. Proxy from AWS — don't cache to disk (LiDAR DEM may become available after next scan)
     try:
         resp = await _get_http_client().get(AWS_TERRAIN_URL.format(z=z, x=x, y=y))
         if resp.status_code == 200 and len(resp.content) >= _MIN_PNG_BYTES:
-            _atomic_write(tile_path, resp.content)
-            return Response(content=resp.content, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+            return Response(content=resp.content, media_type="image/png", headers={"Cache-Control": "no-store"})
     except Exception as e:
         log.warning("aws_terrain_proxy_failed", z=z, x=x, y=y, error=str(e))
     # 4. Flat fallback — always valid, MapLibre can always decode this

@@ -1,6 +1,6 @@
 [project]
 name = "hole-finder"
-version = "0.9.1"
+version = "__HOLEFINDER_VERSION__"
 description = "LiDAR-based terrain anomaly detection platform for caves, mines, and sinkholes"
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
@@ -39,6 +39,7 @@ dependencies = [
     # Data access
     "httpx>=0.27",
     "httpx-retries>=0.3",
+    "laspy[lazrs]>=2.5",
     "pystac-client>=0.8",
     "boto3>=1.34",
     # Config

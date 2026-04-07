@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from hole_finder.detection.base import PassInput
 from tests.conftest import PROJECT_ROOT
 from tests.fixtures.synthetic_dem import (
     make_flat_geotiff,
@@ -315,6 +316,53 @@ class TestPassRunnerToml:
             runner = PassRunner.from_toml(PROJECT_ROOT / "configs/passes/sinkhole_survey.toml")
             runner.fuser.min_confidence = 0.5  # higher threshold for near-flat terrain
             assert len(runner.run_on_array(inp.dem, inp.transform, inp.crs, inp.derivatives)) == 0
+
+
+class TestSVFNormalization:
+    """Regression tests for SVF pass — WBT outputs raw integers, not 0-1 fractions."""
+
+    def test_svf_pass_normalizes_raw_integer_output(self):
+        """SVF values in 0-32000 range must be normalized to 0-1 before thresholding."""
+        from hole_finder.detection.passes.sky_view_factor import SkyViewFactorPass
+        from rasterio.transform import from_bounds
+        # Create a 50x50 SVF raster with raw integer values (simulating WBT output)
+        # Most pixels at ~25000 (open sky), a 10x10 bowl at ~15000 (enclosed)
+        svf = np.full((50, 50), 25000.0, dtype=np.float32)
+        svf[20:30, 20:30] = 15000.0  # enclosed region: 15000/25000 = 0.6 normalized, below 0.75 threshold
+        dem = np.full((50, 50), 300.0, dtype=np.float32)
+        transform = from_bounds(0, 0, 50, 50, 50, 50)
+        inp = PassInput(dem=dem, transform=transform, crs=32617, derivatives={"svf": svf})
+        p = SkyViewFactorPass()
+        candidates = p.run(inp)
+        # Without normalization, svf < 0.75 matches zero pixels (all > 10000)
+        # With normalization, the bowl at 0.6 should be detected
+        assert len(candidates) > 0, "SVF pass should detect enclosed region in raw integer data"
+        assert candidates[0].morphometrics["area_m2"] > 50
+
+    def test_svf_pass_already_normalized_input(self):
+        """SVF values already in 0-1 range should work without double-normalization."""
+        from hole_finder.detection.passes.sky_view_factor import SkyViewFactorPass
+        from rasterio.transform import from_bounds
+        svf = np.full((50, 50), 0.95, dtype=np.float32)
+        svf[20:30, 20:30] = 0.5  # enclosed region below 0.75 threshold
+        dem = np.full((50, 50), 300.0, dtype=np.float32)
+        transform = from_bounds(0, 0, 50, 50, 50, 50)
+        inp = PassInput(dem=dem, transform=transform, crs=32617, derivatives={"svf": svf})
+        p = SkyViewFactorPass()
+        candidates = p.run(inp)
+        assert len(candidates) > 0, "SVF pass should detect enclosed region in 0-1 data"
+
+    def test_svf_high_values_not_detected(self):
+        """Uniformly high SVF (open terrain) should produce zero detections."""
+        from hole_finder.detection.passes.sky_view_factor import SkyViewFactorPass
+        from rasterio.transform import from_bounds
+        svf = np.full((50, 50), 24000.0, dtype=np.float32)  # uniformly open sky
+        dem = np.full((50, 50), 300.0, dtype=np.float32)
+        transform = from_bounds(0, 0, 50, 50, 50, 50)
+        inp = PassInput(dem=dem, transform=transform, crs=32617, derivatives={"svf": svf})
+        p = SkyViewFactorPass()
+        candidates = p.run(inp)
+        assert len(candidates) == 0, "Uniformly high SVF should not detect anything"
 
 
 class TestOutlineExtraction:
