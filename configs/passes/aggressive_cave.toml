@@ -1,24 +1,22 @@
 [pipeline]
-name = "sinkhole_survey"
-description = "Optimized for sinkhole detection — highest recall"
+name = "aggressive_cave"
+description = "Maximum sensitivity cave/depression detection — loose thresholds, all DEM passes"
 passes = [
     "fill_difference",
     "local_relief_model",
     "tpi",
     "curvature",
     "sky_view_factor",
-    "point_density",
     "morphometric_filter",
 ]
-min_confidence = 0.3
+min_confidence = 0.15
 
 [weights]
 fill_difference = 1.5
 local_relief_model = 1.5
-tpi = 1.3
-curvature = 0.8
-sky_view_factor = 1.0
-point_density = 2.0
+tpi = 1.0
+curvature = 1.0
+sky_view_factor = 1.2
 morphometric_filter = 0.0
 
 [passes.fill_difference]
@@ -28,12 +26,12 @@ max_area_m2 = 50000
 
 [passes.local_relief_model]
 kernel_sizes = [50, 100, 200]
-threshold_m = 0.2
+threshold_m = 0.15
 min_area_m2 = 10
 max_area_m2 = 50000
 
 [passes.tpi]
-threshold = -0.5
+threshold = -0.3
 radius_m = 15
 
 [passes.curvature]
@@ -46,11 +44,7 @@ n_directions = 16
 threshold = 0.8
 min_area_pixels = 2
 
-[passes.point_density]
-cell_size_m = 2.0
-z_score_threshold = -2.0
-
 [passes.morphometric_filter]
 min_depth_m = 0.3
 max_area_m2 = 50000
-min_circularity = 0.15
+min_circularity = 0.1

@@ -456,11 +456,29 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
             t0 = time.perf_counter()
             _timings = {}
             try:
-                log.info("detection_starting", tile=Path(tile_path).stem, dem=str(tile_result.dem_path), crs=tile_result.crs, derivatives=list(tile_result.derivative_paths.keys()))
+                # Load raw point cloud for point_density/multi_return passes
+                _point_cloud = None
+                raw_path = Path(tile_path)
+                if raw_path.exists() and raw_path.suffix in (".laz", ".las"):
+                    try:
+                        import laspy
+                        _las = laspy.read(str(raw_path))
+                        _point_cloud = np.zeros(len(_las.points), dtype=[("X", "f8"), ("Y", "f8"), ("Z", "f8"), ("ReturnNumber", "u1"), ("NumberOfReturns", "u1"), ("Classification", "u1")])
+                        _point_cloud["X"] = _las.x
+                        _point_cloud["Y"] = _las.y
+                        _point_cloud["Z"] = _las.z
+                        _point_cloud["ReturnNumber"] = _las.return_number
+                        _point_cloud["NumberOfReturns"] = _las.number_of_returns
+                        _point_cloud["Classification"] = _las.classification
+                        log.info("point_cloud_loaded", tile=Path(tile_path).name, points=len(_point_cloud))
+                    except Exception as _pc_err:
+                        log.warning("point_cloud_load_failed", error=str(_pc_err)[:200])
+                log.info("detection_starting", tile=Path(tile_path).stem, dem=str(tile_result.dem_path), crs=tile_result.crs, derivatives=list(tile_result.derivative_paths.keys()), has_point_cloud=_point_cloud is not None)
                 _t = time.perf_counter()
                 candidates = runner.run_on_dem(
                     tile_result.dem_path,
                     tile_result.derivative_paths,
+                    point_cloud=_point_cloud,
                 )
                 _timings["detection_passes_s"] = round(time.perf_counter() - _t, 3)
                 log.info("detection_raw", tile=Path(tile_path).stem, raw_candidates=len(candidates))
