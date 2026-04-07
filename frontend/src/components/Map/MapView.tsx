@@ -209,13 +209,14 @@ function MVTLayerManager() {
         source: 'detections-mvt',
         'source-layer': 'detections',
         // Zoom-dependent confidence filter: at low zoom only show high-confidence,
-        // progressively reveal lower-confidence detections as user zooms in
+        // progressively reveal lower-confidence detections as user zooms in.
+        // More lenient at high zoom so zoomed-in users see everything in their viewport.
         filter: ['>=', ['get', 'confidence'],
           ['step', ['zoom'],
-            0.7,      // zoom < 12: only high confidence
-            12, 0.6,  // zoom 12–14: medium-high
-            14, 0.5,  // zoom 14–16: medium
-            16, 0.3,  // zoom 16+: show all
+            0.7,      // zoom < 11: only high confidence (wide view)
+            11, 0.5,  // zoom 11–13: medium
+            13, 0.3,  // zoom 13–15: most detections
+            15, 0.15, // zoom 15+: show everything stored
           ],
         ],
         paint: {

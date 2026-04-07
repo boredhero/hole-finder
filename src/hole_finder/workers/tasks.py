@@ -463,14 +463,14 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                 log.info("crs_transform_ok", crs=crs_code, test_point=f"({round(_test_lon,4)},{round(_test_lat,4)})")
 
                 good = [c for c in candidates
-                        if c.score > 0.3
-                        and c.morphometrics.get("area_m2", 0) > 50
-                        and c.morphometrics.get("depth_m", 0) > 0.5
+                        if c.score > 0.15
+                        and c.morphometrics.get("area_m2", 0) > 20
+                        and c.morphometrics.get("depth_m", 0) > 0.3
                         and (c.morphometrics.get("depth_m", 0)
-                             or c.morphometrics.get("lrm_anomaly_m", 0)) < 100]
+                             or c.morphometrics.get("lrm_anomaly_m", 0)) < 150]
                 log.info("detection_filtered", tile=Path(tile_path).stem, after_filter=len(good), before_filter=len(candidates))
                 good.sort(key=lambda c: c.score, reverse=True)
-                good = good[:50]
+                good = good[:200]
 
                 # Transform centroids to WGS84, discard any with infinity/NaN coords
                 wgs84_points = []
