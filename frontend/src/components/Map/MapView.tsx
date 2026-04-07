@@ -23,6 +23,16 @@ const TERRAIN_SOURCE = {
 
 const MAPLIBRE_GLYPHS = 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf';
 
+// Shared relief hillshade source — available on ALL basemaps where we have LiDAR DEMs.
+// Outside coverage, tiles are transparent (RGBA) so the base imagery shows through.
+const RELIEF_SOURCE = {
+  type: 'raster' as const,
+  tiles: ['/api/raster/hillshade/{z}/{x}/{y}.png'],
+  tileSize: 256,
+  minzoom: 10,
+  maxzoom: 18,
+};
+
 const SATELLITE_STYLE = {
   version: 8 as const,
   glyphs: MAPLIBRE_GLYPHS,
@@ -41,6 +51,7 @@ const SATELLITE_STYLE = {
       maxzoom: 18,
       attribution: 'CARTO',
     },
+    'relief-hillshade': RELIEF_SOURCE,
     'terrain-source': TERRAIN_SOURCE,
   },
   layers: [
@@ -48,6 +59,12 @@ const SATELLITE_STYLE = {
       id: 'satellite',
       type: 'raster' as const,
       source: 'esri-satellite',
+    },
+    {
+      id: 'relief-hillshade',
+      type: 'raster' as const,
+      source: 'relief-hillshade',
+      paint: { 'raster-opacity': 0.35 },
     },
     {
       id: 'labels',
@@ -68,13 +85,7 @@ const RELIEF_STYLE = {
       maxzoom: 17,
       attribution: 'OpenTopoMap',
     },
-    'relief-hillshade': {
-      type: 'raster' as const,
-      tiles: ['/api/raster/hillshade/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      minzoom: 10,
-      maxzoom: 18,
-    },
+    'relief-hillshade': RELIEF_SOURCE,
     'terrain-source': TERRAIN_SOURCE,
   },
   layers: [
@@ -103,6 +114,7 @@ const TOPO_STYLE = {
       maxzoom: 17,
       attribution: 'OpenTopoMap',
     },
+    'relief-hillshade': RELIEF_SOURCE,
     'terrain-source': TERRAIN_SOURCE,
   },
   layers: [
@@ -110,6 +122,12 @@ const TOPO_STYLE = {
       id: 'topo-base',
       type: 'raster' as const,
       source: 'opentopomap',
+    },
+    {
+      id: 'relief-hillshade',
+      type: 'raster' as const,
+      source: 'relief-hillshade',
+      paint: { 'raster-opacity': 0.45 },
     },
   ],
 };
@@ -428,16 +446,20 @@ function MVTLayerManager() {
     // throw DOMException during the style transition.
     map.on('style.load', () => {
       requestAnimationFrame(() => {
+        // For external styles (Dark), terrain + relief sources aren't baked in
         try {
-          if (!map.getSource('terrain-source')) {
-            map.addSource('terrain-source', TERRAIN_SOURCE);
+          if (!map.getSource('terrain-source')) map.addSource('terrain-source', TERRAIN_SOURCE);
+        } catch { /* race */ }
+        try {
+          if (!map.getSource('relief-hillshade')) {
+            map.addSource('relief-hillshade', RELIEF_SOURCE);
+            map.addLayer({ id: 'relief-hillshade', type: 'raster', source: 'relief-hillshade', paint: { 'raster-opacity': 0.35 } });
           }
-        } catch { /* race during rapid style switches */ }
+        } catch { /* race */ }
         try {
           addMVTLayers(map);
         } catch (e) {
           console.warn('[MVT] Re-add after style change failed:', e);
-          // Retry once more after another frame
           requestAnimationFrame(() => { try { addMVTLayers(map); } catch { /* give up */ } });
         }
       });
