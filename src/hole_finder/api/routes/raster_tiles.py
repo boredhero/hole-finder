@@ -113,7 +113,8 @@ def _scan_dem_bounds() -> dict[str, tuple[float, float, float, float]]:
         return _dem_bounds_cache
 
     import rasterio
-    from pyproj import CRS as PyprojCRS, Transformer
+    from pyproj import Transformer
+    from hole_finder.utils.crs import resolve_epsg
 
     bounds = {}
     processed_dir = settings.processed_dir
@@ -126,33 +127,21 @@ def _scan_dem_bounds() -> dict[str, tuple[float, float, float, float]]:
             with rasterio.open(dem_path) as src:
                 b = src.bounds
                 crs = src.crs
-                if not crs or crs.to_epsg() == 4326:
+                if not crs:
+                    continue
+                try:
+                    epsg = resolve_epsg(crs)
+                except ValueError:
+                    log.warning("dem_bounds_crs_failed", path=str(dem_path), crs=str(crs)[:80])
+                    continue
+                if epsg == 4326:
                     west, south, east, north = b.left, b.bottom, b.right, b.top
                 else:
-                    # Handle compound CRS (e.g. UTM + NAVD88 vertical) by
-                    # extracting the horizontal component — pyproj returns inf
-                    # when transforming directly from compound CRS WKT
-                    epsg = crs.to_epsg()
-                    if epsg:
-                        src_crs = f"EPSG:{epsg}"
-                    else:
-                        # Compound CRS (UTM + vertical datum) — extract horizontal component
-                        pcrs = PyprojCRS(crs)
-                        horiz = pcrs.sub_crs_list[0] if pcrs.sub_crs_list else pcrs
-                        h_epsg = horiz.to_epsg()
-                        if not h_epsg:
-                            # Last resort: parse UTM zone from CRS name (e.g. "NAD83 / UTM zone 17N")
-                            import re
-                            m = re.search(r'UTM zone (\d+)([NS])', str(crs))
-                            if m:
-                                h_epsg = 26900 + int(m.group(1)) if m.group(2) == 'N' else 32700 + int(m.group(1))
-                        src_crs = f"EPSG:{h_epsg}" if h_epsg else horiz
-                    transformer = Transformer.from_crs(src_crs, "EPSG:4326", always_xy=True)
+                    transformer = Transformer.from_crs(f"EPSG:{epsg}", "EPSG:4326", always_xy=True)
                     west, south = transformer.transform(b.left, b.bottom)
                     east, north = transformer.transform(b.right, b.top)
-                    # Sanity check — inf means the transform failed silently
                     if not all(math.isfinite(v) for v in (west, south, east, north)):
-                        log.warning("dem_bounds_infinite", path=str(dem_path), crs=str(crs)[:80])
+                        log.warning("dem_bounds_infinite", path=str(dem_path), epsg=epsg)
                         continue
                 bounds[str(dem_path)] = (west, south, east, north)
         except Exception as e:
