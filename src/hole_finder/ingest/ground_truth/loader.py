@@ -1,9 +1,15 @@
-"""Unified ground truth loader — orchestrates all sub-loaders and deduplicates."""
+"""Unified ground truth loader — orchestrates all sub-loaders.
+
+Each source is deleted before re-loading to ensure idempotency.
+Re-running load_all_ground_truth always produces a clean dataset.
+"""
 
 import time
 
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from hole_finder.db.models import GroundTruthSite, GroundTruthSource
 from hole_finder.ingest.ground_truth.ca_blm_aml import load_ca_blm_aml
 from hole_finder.ingest.ground_truth.la_subsidence import load_la_subsidence
 from hole_finder.ingest.ground_truth.ma_mines import load_ma_mines
@@ -17,8 +23,24 @@ from hole_finder.ingest.ground_truth.usgs_ny_karst import load_usgs_ny_karst
 from hole_finder.utils.log_manager import log
 
 
+# Maps orchestrator name → GroundTruthSource enum for pre-delete
+_SOURCE_MAP = {
+    "pasda_karst": GroundTruthSource.PASDA_KARST,
+    "pa_aml": GroundTruthSource.PA_AML,
+    "usgs_ny": GroundTruthSource.USGS_NY,
+    "usgs_national": GroundTruthSource.USGS_NATIONAL,
+    "ohio_epa": GroundTruthSource.OHIO_EPA,
+    "nc_cave_survey": GroundTruthSource.NC_CAVE_SURVEY,
+    "md_karst_survey": GroundTruthSource.MD_KARST_SURVEY,
+    "ma_usgs_mines": GroundTruthSource.MA_USGS_MINES,
+    "la_subsidence": GroundTruthSource.LA_SUBSIDENCE,
+    "ca_blm_aml": GroundTruthSource.CA_BLM_AML,
+}
+
+
 async def load_all_ground_truth(session: AsyncSession, data_dir: str) -> dict[str, int]:
-    """Load all ground truth datasets. Returns counts per source."""
+    """Load all ground truth datasets. Returns counts per source.
+    Deletes existing records per source before re-loading for idempotency."""
     t0 = time.monotonic()
     results = {}
     loaders = [
@@ -37,6 +59,13 @@ async def load_all_ground_truth(session: AsyncSession, data_dir: str) -> dict[st
     for name, loader_fn in loaders:
         try:
             t_loader = time.monotonic()
+            source_enum = _SOURCE_MAP.get(name)
+            if source_enum:
+                result = await session.execute(delete(GroundTruthSite).where(GroundTruthSite.source == source_enum))
+                deleted = result.rowcount
+                if deleted:
+                    log.info("ground_truth_pre_delete", source=name, deleted=deleted)
+                await session.commit()
             count = await loader_fn(session, data_dir)
             elapsed_loader = round(time.monotonic() - t_loader, 3)
             results[name] = count
