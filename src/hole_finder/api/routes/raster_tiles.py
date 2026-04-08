@@ -496,15 +496,13 @@ async def warm_terrain_cache(
         if tile_path.exists() and tile_path.stat().st_size >= _MIN_PNG_BYTES:
             return "cached"
         bbox = _tile_to_bbox(z, x, y)
-        dem_path = _find_dem_for_tile(*bbox)
-        if dem_path:
-            try:
-                png_bytes = _render_terrain_tile_from_dem(dem_path, z, x, y)
+        try:
+            png_bytes = _render_terrain_tile_from_vrt(z, x, y)
+            if png_bytes:
                 _atomic_write(tile_path, png_bytes)
                 return "rendered"
-            except Exception as e:
-                log.warning("warm_render_failed", dem=str(dem_path)[:80], z=z, x=x, y=y, error=str(e))
-                pass
+        except Exception as e:
+            log.warning("warm_render_failed", z=z, x=x, y=y, error=str(e))
         async with sem:
             try:
                 resp = await client.get(AWS_TERRAIN_URL.format(z=z, x=x, y=y))
