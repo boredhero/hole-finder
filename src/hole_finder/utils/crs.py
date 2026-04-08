@@ -82,6 +82,14 @@ def resolve_epsg(crs_source: Union["rasterio.crs.CRS", str, Path, None]) -> int:
             log.info("crs_resolved", method="compound_horizontal", epsg=h_epsg, compound=True, raw=str(crs_source)[:80])
             return h_epsg
     # Regex fallback: parse UTM zone from CRS WKT/name string
+    # 269xx (NAD83 UTM North) is intentional here, NOT 326xx (WGS84 UTM North).
+    # This path only triggers when pyproj can't parse the CRS, and the WKT string
+    # we're regex-matching says "NAD83 / UTM zone ..." — because US LiDAR (USGS 3DEP,
+    # PASDA, state sources) is NAD83. Using 326xx would be the wrong datum.
+    # NAD83 vs WGS84 differ by ~1-2m in CONUS — within noise for 1m LiDAR — and
+    # PROJ_NETWORK=OFF already forces the simple geocentric transform that treats
+    # them as equivalent. Southern hemisphere uses 327xx (WGS84) because NAD83
+    # is a North American datum with no southern zones.
     crs_str = str(crs_source)
     m = _UTM_ZONE_RE.search(crs_str)
     if m:
