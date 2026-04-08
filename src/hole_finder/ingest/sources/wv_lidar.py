@@ -91,17 +91,9 @@ class WVLidarSource(DataSource):
         log.info("wv_download_start", tile_id=tile.source_id, url=tile.url[:120], dest=str(dest_path))
         t0 = time.monotonic()
         try:
-            async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
-                async with client.stream("GET", tile.url) as response:
-                    response.raise_for_status()
-                    content_length = int(response.headers.get("content-length", 0))
-                    downloaded = 0
-                    with open(dest_path, "wb") as f:
-                        async for chunk in response.aiter_bytes(chunk_size=1024 * 256):
-                            f.write(chunk)
-                            downloaded += len(chunk)
+            downloaded = await self._stream_download(tile.url, dest_path, timeout=300.0)
             elapsed = time.monotonic() - t0
-            log.info("wv_download_complete", tile_id=tile.source_id, path=str(dest_path), bytes=downloaded, expected=content_length, elapsed_s=elapsed)
+            log.info("wv_download_complete", tile_id=tile.source_id, path=str(dest_path), bytes=downloaded, elapsed_s=elapsed)
         except httpx.HTTPStatusError as e:
             log.error("wv_download_http_error", tile_id=tile.source_id, status=e.response.status_code, error=str(e), exception=True)
             raise
