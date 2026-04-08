@@ -9,6 +9,9 @@ pyproj.network.set_network_enabled(False)
 from celery import Celery
 
 from hole_finder.config import settings
+from hole_finder.utils.log_manager import log
+
+log.info("celery_app_initializing", broker=settings.redis_url.split("@")[-1] if "@" in settings.redis_url else settings.redis_url, proj_network="disabled")
 
 app = Celery("hole_finder")
 app.config_from_object(
@@ -41,3 +44,5 @@ app.conf.beat_schedule = {
         "schedule": 86400.0,  # Daily
     },
 }
+
+log.info("celery_app_configured", queues=["ingest", "process", "detect", "gpu"], task_time_limit=3600, beat_tasks=list(app.conf.beat_schedule.keys()))

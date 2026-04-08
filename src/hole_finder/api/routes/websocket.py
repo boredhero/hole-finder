@@ -2,12 +2,14 @@
 
 import asyncio
 import json
+import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
 from hole_finder.db.engine import async_session_factory
 from hole_finder.db.models import Job
+from hole_finder.utils.log_manager import log
 
 router = APIRouter()
 
@@ -21,18 +23,23 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+        log.info("ws_client_connected", total_connections=len(self.active_connections))
 
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
+            log.info("ws_client_disconnected", total_connections=len(self.active_connections))
 
     async def broadcast(self, message: dict):
         disconnected = []
         for conn in self.active_connections:
             try:
                 await conn.send_json(message)
-            except Exception:
+            except Exception as e:
+                log.warning("ws_broadcast_send_failed", error=str(e))
                 disconnected.append(conn)
+        if disconnected:
+            log.info("ws_broadcast_cleanup", dropped=len(disconnected))
         for conn in disconnected:
             self.disconnect(conn)
 
@@ -47,6 +54,7 @@ async def job_progress_ws(websocket: WebSocket):
     try:
         while True:
             # Poll for active jobs and send updates
+            t0 = time.perf_counter()
             async with async_session_factory() as session:
                 # Include recently completed/failed jobs so clients catch the transition
                 from datetime import UTC, datetime, timedelta
@@ -57,7 +65,6 @@ async def job_progress_ws(websocket: WebSocket):
                 ).order_by(Job.created_at.desc()).limit(50)
                 result = await session.execute(stmt)
                 jobs = result.scalars().all()
-
                 updates = []
                 for j in jobs:
                     summary = j.result_summary or {}
@@ -71,21 +78,24 @@ async def job_progress_ws(websocket: WebSocket):
                         "total_detections": summary.get("total_detections"),
                         "download_mb": summary.get("download_mb"),
                     })
-
                 if updates:
+                    log.debug("ws_job_updates_sent", job_count=len(updates), elapsed_ms=round((time.perf_counter() - t0) * 1000, 1))
                     await websocket.send_json({"type": "job_updates", "jobs": updates})
-
             # Also listen for client messages (e.g., subscribe to specific job)
             try:
                 data = await asyncio.wait_for(websocket.receive_text(), timeout=2.0)
                 # Client can send {"subscribe": "job_id"} to filter
                 msg = json.loads(data)
+                log.debug("ws_client_message", message_keys=list(msg.keys()))
                 if "ping" in msg:
                     await websocket.send_json({"type": "pong"})
             except TimeoutError:
                 pass  # normal — poll loop continues
-
+            except json.JSONDecodeError as e:
+                log.warning("ws_invalid_json", error=str(e))
     except WebSocketDisconnect:
+        log.info("ws_disconnect_clean")
         manager.disconnect(websocket)
-    except Exception:
+    except Exception as e:
+        log.error("ws_connection_error", error=str(e), exception=True)
         manager.disconnect(websocket)

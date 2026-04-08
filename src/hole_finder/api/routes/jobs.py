@@ -1,5 +1,6 @@
 """Job submission, status, and management endpoints."""
 
+import time
 import uuid
 from datetime import UTC, datetime
 
@@ -12,7 +13,7 @@ from hole_finder.api.deps import get_db
 from hole_finder.api.schemas import JobCreate, JobList, JobStatus
 from hole_finder.db.models import Job, JobType
 from hole_finder.db.models import JobStatus as JobStatusEnum
-from hole_finder.utils.logging import log
+from hole_finder.utils.log_manager import log
 
 router = APIRouter(tags=["jobs"])
 
@@ -43,6 +44,8 @@ async def list_jobs(
     db: AsyncSession = Depends(get_db),
 ):
     """List all jobs, optionally filtered by status."""
+    log.debug("list_jobs_request", status_filter=status)
+    t0 = time.perf_counter()
     stmt = select(Job).order_by(Job.created_at.desc()).limit(100)
     if status:
         try:
@@ -51,9 +54,9 @@ async def list_jobs(
         except ValueError as e:
             log.debug("invalid_job_status_filter", status=status, error=str(e))
             pass
-
     result = await db.execute(stmt)
     jobs = result.scalars().all()
+    log.info("list_jobs_complete", count=len(jobs), status_filter=status, elapsed_ms=round((time.perf_counter() - t0) * 1000, 1))
     return JobList(jobs=[_job_to_schema(j) for j in jobs])
 
 
@@ -63,17 +66,17 @@ async def create_job(
     db: AsyncSession = Depends(get_db),
 ):
     """Submit a new processing job."""
+    log.info("create_job_request", job_type=body.job_type, pass_config=body.pass_config, has_bbox=body.bbox is not None)
     try:
         job_type = JobType(body.job_type.upper())
-    except ValueError:
+    except ValueError as e:
+        log.warning("create_job_unknown_type", requested=body.job_type, fallback="FULL_PIPELINE", error=str(e))
         job_type = JobType.FULL_PIPELINE
-
     region_geom = None
     if body.bbox:
         from geoalchemy2.shape import from_shape
         from shapely.geometry import shape
         region_geom = from_shape(shape(body.bbox), srid=4326)
-
     job = Job(
         job_type=job_type,
         status=JobStatusEnum.PENDING,
@@ -84,16 +87,14 @@ async def create_job(
     db.add(job)
     await db.commit()
     await db.refresh(job)
-
+    log.info("job_created", job_id=str(job.id), job_type=job_type.value, status="PENDING")
     # Submit to Celery
     try:
         from hole_finder.workers.tasks import run_full_pipeline
-
         bbox_geojson = None
         if body.bbox:
             from shapely.geometry import mapping, shape
             bbox_geojson = body.bbox
-
         task = run_full_pipeline.delay(
             job_id=str(job.id),
             pass_config=body.pass_config,
@@ -102,9 +103,9 @@ async def create_job(
         job.celery_task_id = task.id
         job.status = JobStatusEnum.RUNNING
         await db.commit()
-    except Exception:
-        pass  # Celery not running is non-fatal for job creation
-
+        log.info("job_submitted_to_celery", job_id=str(job.id), celery_task_id=task.id)
+    except Exception as e:
+        log.warning("celery_submit_failed", job_id=str(job.id), error=str(e), exception=True)
     return _job_to_schema(job)
 
 
@@ -114,9 +115,12 @@ async def get_job(
     db: AsyncSession = Depends(get_db),
 ):
     """Get status of a specific job."""
+    log.debug("get_job_request", job_id=str(job_id))
     job = await db.get(Job, job_id)
     if not job:
+        log.warning("get_job_not_found", job_id=str(job_id))
         raise HTTPException(status_code=404, detail="Job not found")
+    log.debug("get_job_result", job_id=str(job_id), status=job.status.value if job.status else "unknown", progress=job.progress)
     return _job_to_schema(job)
 
 
@@ -126,22 +130,23 @@ async def cancel_job(
     db: AsyncSession = Depends(get_db),
 ):
     """Cancel a pending or running job."""
+    log.info("cancel_job_request", job_id=str(job_id))
     job = await db.get(Job, job_id)
     if not job:
+        log.warning("cancel_job_not_found", job_id=str(job_id))
         raise HTTPException(status_code=404, detail="Job not found")
-
     if job.status not in (JobStatusEnum.PENDING, JobStatusEnum.RUNNING):
+        log.warning("cancel_job_invalid_state", job_id=str(job_id), current_status=job.status.value)
         raise HTTPException(status_code=400, detail=f"Cannot cancel job in state {job.status.value}")
-
+    previous_status = job.status.value
     job.status = JobStatusEnum.CANCELLED
     job.completed_at = datetime.now(UTC)
     await db.commit()
-
+    log.info("job_cancelled", job_id=str(job_id), previous_status=previous_status)
     # Revoke Celery task if running
     # if job.celery_task_id:
     #     from hole_finder.workers.celery_app import app
     #     app.control.revoke(job.celery_task_id, terminate=True)
-
     return {"status": "cancelled", "job_id": str(job_id)}
 
 
@@ -156,8 +161,8 @@ async def consumer_scan(
     under 5 minutes. The consumer never sees the word "job" — this is
     presented as "scanning your area."
     """
+    log.info("consumer_scan_request", lat=body.lat, lon=body.lon, radius_km=body.radius_km)
     r = body.radius_km / 111.32  # degrees approx
-
     bbox_geojson = {
         "type": "Polygon",
         "coordinates": [[
@@ -168,17 +173,13 @@ async def consumer_scan(
             [body.lon - r, body.lat - r],
         ]],
     }
-
     from geoalchemy2.shape import from_shape
     from shapely.geometry import shape
     from sqlalchemy import text
-
     region_geom = from_shape(shape(bbox_geojson), srid=4326)
-
     # Don't delete existing detections upfront — the Celery worker
     # clears them only after confirming tiles are available to process.
     # This preserves data when a scan finds no LiDAR coverage.
-
     job = Job(
         job_type=JobType.FULL_PIPELINE,
         status=JobStatusEnum.PENDING,
@@ -196,11 +197,10 @@ async def consumer_scan(
     db.add(job)
     await db.commit()
     await db.refresh(job)
-
+    log.info("consumer_scan_job_created", job_id=str(job.id), lat=body.lat, lon=body.lon, radius_km=body.radius_km)
     # Submit to Celery
     try:
         from hole_finder.workers.tasks import run_full_pipeline
-
         task = run_full_pipeline.delay(
             job_id=str(job.id),
             pass_config="sinkhole_survey",
@@ -210,12 +210,12 @@ async def consumer_scan(
         job.status = JobStatusEnum.RUNNING
         job.started_at = datetime.now(UTC)
         await db.commit()
-    except Exception:
-        pass  # Celery not running is non-fatal
-
+        log.info("consumer_scan_submitted", job_id=str(job.id), celery_task_id=task.id)
+    except Exception as e:
+        log.warning("consumer_scan_celery_failed", job_id=str(job.id), error=str(e), exception=True)
     # Estimate: ~75s per tile, assume 3 tiles avg
     estimated_minutes = round(3 * 75 / 60, 1)
-
+    log.info("consumer_scan_response", job_id=str(job.id), estimated_minutes=estimated_minutes)
     return {
         "job_id": str(job.id),
         "estimated_minutes": estimated_minutes,

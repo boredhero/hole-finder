@@ -6,6 +6,7 @@ massive GeoJSON to the frontend.
 """
 
 import math
+import time
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
@@ -13,6 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hole_finder.api.deps import get_db
+from hole_finder.utils.log_manager import log
 
 router = APIRouter(tags=["tiles"])
 
@@ -39,8 +41,9 @@ async def get_vector_tile(
 
     Uses PostGIS ST_AsMVTGeom + ST_AsMVT for efficient on-the-fly generation.
     """
+    log.debug("mvt_tile_request", z=z, x=x, y=y, min_confidence=min_confidence)
+    t0 = time.perf_counter()
     bbox = _tile_to_bbox(z, x, y)
-
     # ST_AsMVT query — point layer + outline polygon layer
     query = text("""
         WITH tile_bounds AS (
@@ -77,7 +80,6 @@ async def get_vector_tile(
             || COALESCE((SELECT ST_AsMVT(outline_data, 'outlines', 4096, 'geom') FROM outline_data), ''::bytea)
         AS mvt
     """)
-
     result = await db.execute(query, {
         "xmin": bbox[0],
         "ymin": bbox[1],
@@ -87,7 +89,11 @@ async def get_vector_tile(
     })
     row = result.fetchone()
     mvt_data = row[0] if row and row[0] else b""
-
+    tile_bytes = len(mvt_data)
+    elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
+    log.debug("mvt_tile_generated", z=z, x=x, y=y, tile_bytes=tile_bytes, elapsed_ms=elapsed_ms)
+    if tile_bytes == 0:
+        log.debug("mvt_tile_empty", z=z, x=x, y=y, min_confidence=min_confidence)
     return Response(
         content=bytes(mvt_data),
         media_type="application/x-protobuf",
@@ -106,8 +112,9 @@ async def get_ground_truth_tile(
     db: AsyncSession = Depends(get_db),
 ):
     """Serve ground truth sites as vector tiles."""
+    log.debug("ground_truth_tile_request", z=z, x=x, y=y)
+    t0 = time.perf_counter()
     bbox = _tile_to_bbox(z, x, y)
-
     query = text("""
         WITH tile_bounds AS (
             SELECT ST_MakeEnvelope(:xmin, :ymin, :xmax, :ymax, 4326) AS geom
@@ -125,14 +132,13 @@ async def get_ground_truth_tile(
         SELECT ST_AsMVT(tile_data, 'ground_truth', 4096, 'geom') AS mvt
         FROM tile_data
     """)
-
     result = await db.execute(query, {
         "xmin": bbox[0], "ymin": bbox[1],
         "xmax": bbox[2], "ymax": bbox[3],
     })
     row = result.fetchone()
     mvt_data = row[0] if row and row[0] else b""
-
+    log.debug("ground_truth_tile_generated", z=z, x=x, y=y, tile_bytes=len(mvt_data), elapsed_ms=round((time.perf_counter() - t0) * 1000, 1))
     return Response(
         content=bytes(mvt_data),
         media_type="application/x-protobuf",

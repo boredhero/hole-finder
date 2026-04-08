@@ -14,6 +14,7 @@ import math
 import os
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 import httpx
@@ -23,7 +24,7 @@ from fastapi.responses import Response
 from scipy.ndimage import distance_transform_edt
 
 from hole_finder.config import settings
-from hole_finder.utils.logging import log
+from hole_finder.utils.log_manager import log
 
 from concurrent.futures import ThreadPoolExecutor
 
@@ -47,10 +48,13 @@ def _get_dem_vrts() -> list[str]:
         # Return cached list if all files still exist
         cached = _dem_vrt_path if isinstance(_dem_vrt_path, list) else [_dem_vrt_path]
         if all(Path(p).exists() for p in cached):
+            log.debug("dem_vrt_cache_hit", vrt_count=len(cached), age_s=round(now - _dem_vrt_time, 1))
             return cached
+    rebuild_start = _time.time()
     import rasterio
     dem_paths = sorted(settings.processed_dir.glob("*/*_dem.tif"))
     if not dem_paths:
+        log.debug("dem_vrt_no_dems_found")
         return []
     # Group by CRS (usually 1-2 UTM zones per region)
     crs_groups: dict[str, list[str]] = {}
@@ -59,8 +63,8 @@ def _get_dem_vrts() -> list[str]:
             with rasterio.open(p) as src:
                 epsg = src.crs.to_epsg() or "unknown"
             crs_groups.setdefault(str(epsg), []).append(str(p))
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("dem_crs_read_failed", path=str(p), error=str(e))
     vrt_dir = settings.data_dir / "tile_cache"
     vrt_dir.mkdir(parents=True, exist_ok=True)
     vrts = []
@@ -76,7 +80,7 @@ def _get_dem_vrts() -> list[str]:
             log.warning("vrt_build_failed", crs=crs_id, count=len(paths), error=str(e))
     _dem_vrt_path = vrts
     _dem_vrt_time = now
-    log.info("dem_vrts_rebuilt", groups=len(vrts), total_dems=len(dem_paths))
+    log.info("dem_vrts_rebuilt", groups=len(vrts), total_dems=len(dem_paths), elapsed_ms=round((_time.time() - rebuild_start) * 1000, 1))
     return vrts
 
 
@@ -106,7 +110,8 @@ def _atomic_write(path: Path, data: bytes) -> None:
         os.write(fd, data)
         os.close(fd)
         os.rename(tmp, str(path))
-    except Exception:
+    except Exception as e:
+        log.error("atomic_write_failed", path=str(path), error=str(e), exception=True)
         os.close(fd) if not os.get_inheritable(fd) else None
         try:
             os.unlink(tmp)
@@ -163,12 +168,14 @@ def _render_relief_tile(z: int, x: int, y: int) -> bytes | None:
     handles stitching adjacent COPC tiles within each zone seamlessly.
     scipy gap-fills remaining tiny holes at DEM edges.
     Returns RGBA PNG with transparency outside LiDAR coverage."""
+    t0 = time.perf_counter()
     import rasterio
     from rasterio.warp import Resampling, reproject
     from rasterio.transform import from_bounds
     from PIL import Image
     vrts = _get_dem_vrts()
     if not vrts:
+        log.debug("relief_tile_no_vrts", z=z, x=x, y=y)
         return None
     bbox = _tile_to_bbox(z, x, y)
     west, south, east, north = bbox
@@ -191,7 +198,10 @@ def _render_relief_tile(z: int, x: int, y: int) -> bytes | None:
         except Exception as e:
             log.warning("relief_vrt_read_failed", vrt=vrt_path, z=z, x=x, y=y, error=str(e))
     valid = np.isfinite(elev)
+    coverage_pct = round(float(np.count_nonzero(valid)) / valid.size * 100, 1)
+    log.debug("relief_tile_composited", z=z, x=x, y=y, vrt_count=len(vrts), coverage_pct=coverage_pct)
     if not valid.any():
+        log.debug("relief_tile_no_coverage", z=z, x=x, y=y)
         return None
     # Fill gaps at DEM edges with nearest-neighbor (up to 30px so gaps stay
     # closed even at high zoom where each pixel covers less ground)
@@ -200,8 +210,10 @@ def _render_relief_tile(z: int, x: int, y: int) -> bytes | None:
         dist, ind = distance_transform_edt(nan_mask, return_distances=True, return_indices=True)
         fill_mask = nan_mask & (dist <= 30)
         if fill_mask.any():
+            filled_px = int(np.count_nonzero(fill_mask))
             elev[fill_mask] = elev[ind[0][fill_mask], ind[1][fill_mask]]
             valid = valid | fill_mask
+            log.debug("relief_tile_gap_filled", z=z, x=x, y=y, filled_pixels=filled_px)
     # Fill remaining nodata with median (for gradient edge handling)
     fill_val = float(np.nanmedian(elev[valid])) if valid.any() else 0.0
     elev_clean = np.where(valid, elev, fill_val)
@@ -225,7 +237,13 @@ def _render_relief_tile(z: int, x: int, y: int) -> bytes | None:
     img = Image.fromarray(tile, mode="RGBA")
     buf_io = io.BytesIO()
     img.save(buf_io, format="PNG", optimize=True)
-    return buf_io.getvalue()
+    elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
+    png_data = buf_io.getvalue()
+    if elapsed_ms > 500:
+        log.warning("relief_tile_slow_render", z=z, x=x, y=y, elapsed_ms=elapsed_ms, bytes=len(png_data))
+    else:
+        log.debug("relief_tile_complete", z=z, x=x, y=y, elapsed_ms=elapsed_ms, bytes=len(png_data))
+    return png_data
 
 
 TRANSPARENT_PNG = (
@@ -250,7 +268,9 @@ async def get_raster_tile(layer: str, z: int, x: int, y: int):
     if tile_path.exists():
         data = tile_path.read_bytes()
         if len(data) >= _MIN_PNG_BYTES:
+            log.debug("raster_tile_cache_hit", layer=layer, z=z, x=x, y=y, bytes=len(data))
             return Response(content=data, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+        log.warning("raster_tile_cache_corrupt", layer=layer, z=z, x=x, y=y, bytes=len(data))
         tile_path.unlink(missing_ok=True)
     # On-the-fly rendering for hillshade/relief layer from seamless VRT mosaic.
     # Runs entirely in thread pool so VRT build + rasterio never blocks the
@@ -264,7 +284,8 @@ async def get_raster_tile(layer: str, z: int, x: int, y: int):
                 log.info("relief_tile_rendered", z=z, x=x, y=y, bytes=len(png_bytes))
                 return Response(content=png_bytes, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
         except Exception as e:
-            log.error("relief_render_failed", z=z, x=x, y=y, error=str(e), error_type=type(e).__name__)
+            log.error("relief_render_failed", z=z, x=x, y=y, error=str(e), error_type=type(e).__name__, exception=True)
+    log.debug("raster_tile_transparent_fallback", layer=layer, z=z, x=x, y=y)
     return Response(content=TRANSPARENT_PNG, media_type="image/png", headers={"Cache-Control": "public, max-age=60"})
 
 
@@ -275,6 +296,7 @@ def _scan_dem_bounds() -> dict[str, tuple[float, float, float, float]]:
     global _dem_bounds_cache, _dem_bounds_cache_time
     import time as _time
     if _dem_bounds_cache is not None and (_time.time() - _dem_bounds_cache_time) < _DEM_CACHE_TTL:
+        log.debug("dem_bounds_cache_hit", count=len(_dem_bounds_cache), age_s=round(_time.time() - _dem_bounds_cache_time, 1))
         return _dem_bounds_cache
 
     import rasterio
@@ -284,6 +306,7 @@ def _scan_dem_bounds() -> dict[str, tuple[float, float, float, float]]:
     bounds = {}
     processed_dir = settings.processed_dir
     if not processed_dir.exists():
+        log.debug("dem_bounds_no_processed_dir", path=str(processed_dir))
         _dem_bounds_cache = bounds
         _dem_bounds_cache_time = _time.time()
         return bounds
@@ -335,6 +358,8 @@ def _find_dem_for_tile(west: float, south: float, east: float, north: float) -> 
             if overlap > best_overlap:
                 best_overlap = overlap
                 best_path = path
+    if best_path:
+        log.debug("dem_for_tile_found", dem=Path(best_path).name, overlap=round(best_overlap, 8))
     return best_path
 
 
@@ -351,19 +376,23 @@ def _find_all_dems_for_tile(west: float, south: float, east: float, north: float
             overlap = (oe - ow) * (on - os_)
             results.append((path, overlap))
     results.sort(key=lambda x: x[1], reverse=True)
-    return [r[0] for r in results]
+    dem_list = [r[0] for r in results]
+    log.debug("all_dems_for_tile_found", count=len(dem_list), bbox=f"{west:.4f},{south:.4f},{east:.4f},{north:.4f}")
+    return dem_list
 
 
 def _render_terrain_tile_from_vrt(z: int, x: int, y: int) -> bytes | None:
     """Render a 256x256 Terrarium-encoded PNG from the seamless VRT mosaic.
     Uses the same VRT as relief tiles so 3D mesh and hillshade have
     identical coverage — eliminating seam mismatch between them."""
+    t0 = time.perf_counter()
     import rasterio
     from rasterio.warp import Resampling, reproject
     from rasterio.transform import from_bounds
     from PIL import Image
     vrts = _get_dem_vrts()
     if not vrts:
+        log.debug("terrain_vrt_tile_no_vrts", z=z, x=x, y=y)
         return None
     bbox = _tile_to_bbox(z, x, y)
     west, south, east, north = bbox
@@ -377,9 +406,10 @@ def _render_terrain_tile_from_vrt(z: int, x: int, y: int) -> bytes | None:
             patch = buf[0]
             patch_valid = np.isfinite(patch)
             elev = np.where(patch_valid & ~np.isfinite(elev), patch, elev)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("terrain_vrt_read_failed", vrt=vrt_path, z=z, x=x, y=y, error=str(e))
     if not np.isfinite(elev).any():
+        log.debug("terrain_vrt_tile_no_coverage", z=z, x=x, y=y)
         return None
     elevation = np.nan_to_num(elev, nan=0.0)
     encoded = elevation + 32768.0
@@ -389,7 +419,13 @@ def _render_terrain_tile_from_vrt(z: int, x: int, y: int) -> bytes | None:
     img = Image.fromarray(np.stack([r, g, b], axis=-1), mode="RGB")
     out = io.BytesIO()
     img.save(out, format="PNG")
-    return out.getvalue()
+    elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
+    png_data = out.getvalue()
+    if elapsed_ms > 500:
+        log.warning("terrain_vrt_tile_slow_render", z=z, x=x, y=y, elapsed_ms=elapsed_ms, bytes=len(png_data))
+    else:
+        log.debug("terrain_vrt_tile_complete", z=z, x=x, y=y, elapsed_ms=elapsed_ms, bytes=len(png_data))
+    return png_data
 
 
 @router.get("/raster/terrain/{z}/{x}/{y}.png")
@@ -405,7 +441,9 @@ async def get_composited_terrain_tile(z: int, x: int, y: int):
     if tile_path.exists():
         data = tile_path.read_bytes()
         if len(data) >= _MIN_PNG_BYTES:
+            log.debug("terrain_tile_cache_hit", z=z, x=x, y=y, bytes=len(data))
             return Response(content=data, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+        log.warning("terrain_tile_cache_corrupt", z=z, x=x, y=y, bytes=len(data))
         tile_path.unlink(missing_ok=True)
     # 2. Try seamless VRT mosaic (same source as relief tiles — ensures 3D mesh
     #    and hillshade overlay have identical coverage, preventing MapLibre seam artifacts)
@@ -414,17 +452,22 @@ async def get_composited_terrain_tile(z: int, x: int, y: int):
         png_bytes = await loop.run_in_executor(_relief_pool, _render_terrain_tile_from_vrt, z, x, y)
         if png_bytes:
             _atomic_write(tile_path, png_bytes)
+            log.info("terrain_tile_rendered_from_vrt", z=z, x=x, y=y, bytes=len(png_bytes))
             return Response(content=png_bytes, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+        log.debug("terrain_tile_no_vrt_coverage", z=z, x=x, y=y)
     except Exception as e:
-        log.error("terrain_vrt_render_failed", z=z, x=x, y=y, error=str(e))
+        log.error("terrain_vrt_render_failed", z=z, x=x, y=y, error=str(e), exception=True)
     # 3. Proxy from AWS — don't cache to disk (LiDAR DEM may become available after next scan)
     try:
         resp = await _get_http_client().get(AWS_TERRAIN_URL.format(z=z, x=x, y=y))
         if resp.status_code == 200 and len(resp.content) >= _MIN_PNG_BYTES:
+            log.debug("terrain_tile_aws_proxy", z=z, x=x, y=y, bytes=len(resp.content))
             return Response(content=resp.content, media_type="image/png", headers={"Cache-Control": "no-store"})
+        log.warning("terrain_tile_aws_bad_response", z=z, x=x, y=y, status=resp.status_code, bytes=len(resp.content))
     except Exception as e:
         log.warning("aws_terrain_proxy_failed", z=z, x=x, y=y, error=str(e))
     # 4. Flat fallback — always valid, MapLibre can always decode this
+    log.warning("terrain_tile_flat_fallback", z=z, x=x, y=y)
     return Response(content=_make_flat_terrarium_png_256(), media_type="image/png", headers={"Cache-Control": "public, max-age=60"})
 
 
@@ -442,6 +485,7 @@ async def warm_terrain_cache(
     Uses shared httpx client, atomic writes, and batched concurrent fetches
     (10 at a time) to avoid saturating the event loop or AWS connections.
     """
+    log.info("terrain_cache_warm_start", west=west, south=south, east=east, north=north, min_zoom=min_zoom, max_zoom=max_zoom)
     cached = 0
     rendered = 0
     proxied = 0
@@ -501,7 +545,7 @@ def _make_flat_terrarium_png_256() -> bytes:
     global _flat_terrain_cache
     if _flat_terrain_cache is not None:
         return _flat_terrain_cache
-
+    log.debug("flat_terrarium_png_generating")
     from PIL import Image
     img = Image.new("RGB", (256, 256), (128, 0, 0))
     buf = io.BytesIO()
@@ -534,6 +578,7 @@ async def get_terrain_coverage(
     # Cap at 200 tiles to avoid blowing up the response at low zoom
     tile_count = (x_max - x_min + 1) * (y_max - y_min + 1)
     if tile_count > 200:
+        log.debug("terrain_coverage_capped", z=z, tile_count=tile_count)
         return {"type": "FeatureCollection", "features": []}
     features = []
     for tx in range(x_min, x_max + 1):
@@ -553,6 +598,8 @@ async def get_terrain_coverage(
                     ]],
                 },
             })
+    lidar_count = sum(1 for f in features if f["properties"]["source"] == "lidar")
+    log.debug("terrain_coverage_served", z=z, total_tiles=len(features), lidar_tiles=lidar_count)
     return {"type": "FeatureCollection", "features": features}
 
 
@@ -570,13 +617,15 @@ async def get_terrain_rgb_tile(
     tile_path = cache_dir / f"{y}.png"
 
     if tile_path.exists():
+        data = tile_path.read_bytes()
+        log.debug("terrain_rgb_cache_hit", z=z, x=x, y=y, bytes=len(data))
         return Response(
-            content=tile_path.read_bytes(),
+            content=data,
             media_type="image/png",
             headers={"Cache-Control": "public, max-age=86400"},
         )
-
     # Not cached — return sea level terrain-rgb (elevation = 0)
+    log.debug("terrain_rgb_cache_miss_flat_fallback", z=z, x=x, y=y)
     # RGB for 0m: R=1, G=134, B=160 (since 0 = -10000 + (1*65536 + 134*256 + 160) * 0.1)
     FLAT_PNG = (
         b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"

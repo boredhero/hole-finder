@@ -8,14 +8,17 @@ Based on Rafique et al. (2022) — sinkhole IoU 45.38% on DEM gradient.
 Requires PyTorch (GPU optional, ROCm or CUDA).
 """
 
+import time
 from pathlib import Path
 
 import numpy as np
 from scipy.ndimage import label as ndimage_label
+from shapely.geometry import Point
 
 from hole_finder.config import settings
 from hole_finder.detection.base import Candidate, DetectionPass, FeatureType, PassInput
 from hole_finder.detection.registry import register_pass
+from hole_finder.utils.log_manager import log
 
 
 def _build_unet():
@@ -139,54 +142,56 @@ class UNetSegmentationPass(DetectionPass):
         try:
             import torch
         except ImportError:
+            log.warning("unet_pass_pytorch_not_available", reason="import_error")
             return None
-
         UNet = _build_unet()
         model = UNet(in_channels=5, out_channels=1)
-
         if model_path is None:
             model_path = settings.models_dir / "unet_sinkhole_v1.pt"
-
         if model_path.exists():
+            t_load = time.perf_counter()
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             model.load_state_dict(torch.load(model_path, map_location=device))
             model = model.to(device)
             model.eval()
+            load_elapsed = time.perf_counter() - t_load
+            log.info("unet_model_loaded", model_path=str(model_path), device=str(device), load_ms=round(load_elapsed * 1000, 1))
             return model
-
+        log.warning("unet_pass_model_not_found", model_path=str(model_path), reason="returning_none")
         return None
 
     def run(self, input_data: PassInput) -> list[Candidate]:
+        t0 = time.perf_counter()
+        log.info("unet_pass_start", version=self.version)
         try:
             import torch
         except ImportError:
+            log.warning("unet_pass_pytorch_not_available", reason="import_error_returning_empty")
             return []
-
         config = input_data.config
         patch_size = config.get("patch_size", 256)
         overlap = config.get("overlap", 64)
         threshold = config.get("threshold", 0.5)
         min_area_pixels = config.get("min_area_pixels", 10)
         model_path = config.get("model_path")
-
+        log.debug("unet_pass_config", patch_size=patch_size, overlap=overlap, threshold=threshold, min_area_pixels=min_area_pixels)
         model = self._load_model(Path(model_path) if model_path else None)
         if model is None:
+            log.warning("unet_pass_no_model", reason="returning_empty")
             return []
-
         resolution = abs(input_data.transform[0])
         dem = input_data.dem
-
         # Prepare multi-channel input
         channels = _prepare_input_tensor(dem, input_data.derivatives, resolution)
         _, h, w = channels.shape
-
+        log.debug("unet_pass_input_prepared", height=h, width=w, channels=channels.shape[0])
         device = next(model.parameters()).device
-
         # Tile into overlapping patches, run inference, stitch
         prob_map = np.zeros((h, w), dtype=np.float32)
         count_map = np.zeros((h, w), dtype=np.float32)
         stride = patch_size - overlap
-
+        num_patches = 0
+        t_infer = time.perf_counter()
         with torch.no_grad():
             for row in range(0, h - patch_size + 1, stride):
                 for col in range(0, w - patch_size + 1, stride):
@@ -195,33 +200,30 @@ class UNetSegmentationPass(DetectionPass):
                     pred = model(tensor).squeeze().cpu().numpy()
                     prob_map[row:row + patch_size, col:col + patch_size] += pred
                     count_map[row:row + patch_size, col:col + patch_size] += 1
-
+                    num_patches += 1
+        inference_elapsed = time.perf_counter() - t_infer
+        log.info("unet_pass_inference_complete", patches=num_patches, device=str(device), inference_ms=round(inference_elapsed * 1000, 1))
         # Average overlapping predictions
         count_map = np.maximum(count_map, 1)
         prob_map /= count_map
-
         # Threshold and extract connected components
         binary = prob_map > threshold
         if not np.any(binary):
+            elapsed = time.perf_counter() - t0
+            log.info("unet_pass_complete", candidates=0, reason="no_pixels_above_threshold", elapsed_s=elapsed)
             return []
-
         labeled, num_features = ndimage_label(binary)
-
+        log.debug("unet_pass_labeling", raw_features=num_features)
         candidates = []
         for i in range(1, num_features + 1):
             mask = labeled == i
             if np.sum(mask) < min_area_pixels:
                 continue
-
             rows, cols = np.where(mask)
             cy, cx = float(np.mean(rows)), float(np.mean(cols))
             geo_x, geo_y = input_data.transform * (cx, cy)
-
             mean_prob = float(np.mean(prob_map[mask]))
             area_m2 = float(np.sum(mask)) * resolution * resolution
-
-            from shapely.geometry import Point
-
             candidates.append(
                 Candidate(
                     geometry=Point(geo_x, geo_y),
@@ -234,5 +236,6 @@ class UNetSegmentationPass(DetectionPass):
                     metadata={"classifier": "unet", "model_version": "v1"},
                 )
             )
-
+        elapsed = time.perf_counter() - t0
+        log.info("unet_pass_complete", candidates=len(candidates), elapsed_s=elapsed)
         return candidates

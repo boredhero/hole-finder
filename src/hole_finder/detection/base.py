@@ -9,6 +9,8 @@ import numpy as np
 from numpy.typing import NDArray
 from shapely.geometry import Point, Polygon
 
+from hole_finder.utils.log_manager import log
+
 
 class FeatureType(StrEnum):
     SINKHOLE = "sinkhole"
@@ -92,6 +94,7 @@ class DetectionPass(ABC):
 
     def validate_config(self, config: dict[str, Any]) -> dict[str, Any]:
         """Validate and return pass-specific config. Override for custom validation."""
+        log.debug("pass_validate_config", pass_name=self.name, config_keys=list(config.keys()))
         return config
 
     def __repr__(self) -> str:

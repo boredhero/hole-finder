@@ -3,6 +3,7 @@
 import csv
 import io
 import json
+import time
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
@@ -13,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from hole_finder.api.deps import get_db
 from hole_finder.db.models import Detection, FeatureType
-from hole_finder.utils.logging import log
+from hole_finder.utils.log_manager import log
 
 router = APIRouter(tags=["exports"])
 
@@ -29,6 +30,8 @@ async def export_geojson(
     db: AsyncSession = Depends(get_db),
 ):
     """Export detections as downloadable GeoJSON."""
+    log.info("export_geojson_requested", bbox=[west, south, east, north], min_confidence=min_confidence, feature_type=feature_type)
+    t0 = time.perf_counter()
     envelope = ST_MakeEnvelope(west, south, east, north, 4326)
     stmt = (
         select(Detection)
@@ -40,10 +43,9 @@ async def export_geojson(
         ft_enums = [FeatureType(ft) for ft in feature_type if ft in FeatureType.__members__]
         if ft_enums:
             stmt = stmt.where(Detection.feature_type.in_(ft_enums))
-
     result = await db.execute(stmt)
     detections = result.scalars().all()
-
+    log.info("export_geojson_query_complete", detection_count=len(detections), elapsed_ms=round((time.perf_counter() - t0) * 1000, 1))
     features = []
     for d in detections:
         try:
@@ -68,9 +70,10 @@ async def export_geojson(
         })
 
     geojson = {"type": "FeatureCollection", "features": features}
-
+    payload = json.dumps(geojson, indent=2).encode()
+    log.info("export_geojson_complete", feature_count=len(features), size_bytes=len(payload), elapsed_ms=round((time.perf_counter() - t0) * 1000, 1))
     return StreamingResponse(
-        io.BytesIO(json.dumps(geojson, indent=2).encode()),
+        io.BytesIO(payload),
         media_type="application/geo+json",
         headers={"Content-Disposition": "attachment; filename=detections.geojson"},
     )
@@ -86,6 +89,8 @@ async def export_csv(
     db: AsyncSession = Depends(get_db),
 ):
     """Export detections as downloadable CSV."""
+    log.info("export_csv_requested", bbox=[west, south, east, north], min_confidence=min_confidence)
+    t0 = time.perf_counter()
     envelope = ST_MakeEnvelope(west, south, east, north, 4326)
     stmt = (
         select(Detection)
@@ -93,10 +98,9 @@ async def export_csv(
         .where(Detection.confidence >= min_confidence)
         .limit(100000)
     )
-
     result = await db.execute(stmt)
     detections = result.scalars().all()
-
+    log.info("export_csv_query_complete", detection_count=len(detections), elapsed_ms=round((time.perf_counter() - t0) * 1000, 1))
     output = io.StringIO()
     writer = csv.writer(output)
     headers = ["id", "lat", "lon", "feature_type", "confidence", "depth_m", "area_m2", "circularity", "validated"]
@@ -116,8 +120,10 @@ async def export_csv(
             d.confidence, d.depth_m, d.area_m2, d.circularity, d.validated,
         ])
 
+    csv_payload = output.getvalue().encode()
+    log.info("export_csv_complete", row_count=len(detections), size_bytes=len(csv_payload), elapsed_ms=round((time.perf_counter() - t0) * 1000, 1))
     return StreamingResponse(
-        io.BytesIO(output.getvalue().encode()),
+        io.BytesIO(csv_payload),
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=detections.csv"},
     )

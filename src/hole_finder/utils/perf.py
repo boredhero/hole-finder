@@ -16,9 +16,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Generator
 
-import structlog
-
-log = structlog.get_logger()
+from hole_finder.utils.log_manager import log
 
 
 @dataclass

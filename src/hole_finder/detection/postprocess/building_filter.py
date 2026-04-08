@@ -6,18 +6,24 @@ inside a building. Buildings inside cemeteries are kept (mausoleums/crypts don't
 produce false LiDAR anomalies, and real features can exist beneath them).
 """
 
+import time
+
 from shapely.geometry import Point, Polygon, MultiPolygon
 from shapely.prepared import prep
 
-from hole_finder.utils.logging import log
+from hole_finder.utils.log_manager import log
 from hole_finder.utils.overpass import query_overpass
 
 
 def _parse_polygons_from_elements(elements: list[dict]) -> list[Polygon]:
     """Extract valid Shapely Polygons from Overpass JSON elements."""
     polygons = []
+    ways_seen = 0
+    relations_seen = 0
+    invalid_skipped = 0
     for el in elements:
         if el.get("type") == "way":
+            ways_seen += 1
             geom = el.get("geometry", [])
             if len(geom) >= 4:
                 try:
@@ -25,10 +31,13 @@ def _parse_polygons_from_elements(elements: list[dict]) -> list[Polygon]:
                     poly = Polygon(coords)
                     if poly.is_valid and poly.area > 0:
                         polygons.append(poly)
+                    else:
+                        invalid_skipped += 1
                 except Exception as e:
                     log.debug("building_way_geom_parse_failed", element_id=el.get("id"), error=str(e))
                     continue
         elif el.get("type") == "relation":
+            relations_seen += 1
             for member in el.get("members", []):
                 if member.get("role") == "outer" and member.get("type") == "way":
                     member_geom = member.get("geometry", [])
@@ -38,9 +47,12 @@ def _parse_polygons_from_elements(elements: list[dict]) -> list[Polygon]:
                             poly = Polygon(coords)
                             if poly.is_valid and poly.area > 0:
                                 polygons.append(poly)
+                            else:
+                                invalid_skipped += 1
                         except Exception as e:
                             log.debug("building_relation_geom_parse_failed", element_id=el.get("id"), error=str(e))
                             continue
+    log.debug("building_polygons_parsed", total_elements=len(elements), ways=ways_seen, relations=relations_seen, valid_polygons=len(polygons), invalid_skipped=invalid_skipped)
     return polygons
 
 
@@ -55,8 +67,13 @@ def _fetch_cemetery_polygons(south: float, west: float, north: float, east: floa
     );
     out geom;
     """
+    log.debug("overpass_cemetery_request", bbox=f"{west},{south},{east},{north}")
+    t0 = time.monotonic()
     data = query_overpass(query, timeout=20.0, query_label="cemeteries")
-    return _parse_polygons_from_elements(data.get("elements", []))
+    elapsed = time.monotonic() - t0
+    elements = data.get("elements", [])
+    log.info("overpass_cemetery_response", element_count=len(elements), elapsed_s=round(elapsed, 3), bbox=f"{west},{south},{east},{north}")
+    return _parse_polygons_from_elements(elements)
 
 
 def fetch_building_polygons(west: float, south: float, east: float, north: float) -> list[Polygon]:
@@ -71,8 +88,12 @@ def fetch_building_polygons(west: float, south: float, east: float, north: float
     );
     out geom;
     """
+    log.debug("overpass_buildings_request", bbox=f"{west},{south},{east},{north}")
+    t0 = time.monotonic()
     data = query_overpass(query, timeout=45.0, query_label="buildings")
+    elapsed = time.monotonic() - t0
     elements = data.get("elements", [])
+    log.info("overpass_buildings_response", element_count=len(elements), elapsed_s=round(elapsed, 3), bbox=f"{west},{south},{east},{north}")
     if not elements:
         log.warning("overpass_no_buildings_returned", bbox=f"{west},{south},{east},{north}")
         return []
@@ -99,8 +120,10 @@ def filter_candidates_by_buildings(
 
     Candidates are expected to have a .geometry attribute (Shapely Point in WGS84).
     """
+    log.debug("building_filter_start", candidate_count=len(candidates), bbox=f"{west},{south},{east},{north}")
     buildings = fetch_building_polygons(west, south, east, north)
     if not buildings:
+        log.info("building_filter_skipped", reason="no_buildings_found", candidate_count=len(candidates))
         return candidates
 
     # Merge all buildings into a single MultiPolygon for fast lookup

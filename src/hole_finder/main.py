@@ -1,9 +1,47 @@
 """FastAPI application factory."""
 
+import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from hole_finder.utils.log_manager import log, generate_request_id, set_request_id, request_id_var
+
+
+# ── Request Logging Middleware ──────────────────────────────────────────
+# Every request gets an 8-char hex correlation ID (rid). Two log lines per
+# request: "request_in" when it arrives, "request_out" when it completes.
+# The rid propagates via contextvars so every log.info() call inside the
+# request handler automatically includes it. Grep for the rid to see the
+# full lifecycle of any request.
+#
+# Skips /api/health to avoid log spam from Docker healthchecks.
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next) -> Response:
+        path = request.url.path
+        if path == "/api/health":
+            return await call_next(request)
+        rid = generate_request_id()
+        token = set_request_id(rid)
+        method = request.method
+        query = str(request.url.query) if request.url.query else ""
+        log.info("request_in", method=method, path=path, query=query)
+        t0 = time.perf_counter()
+        try:
+            response = await call_next(request)
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
+            log.info("request_out", method=method, path=path, status=response.status_code, elapsed_ms=elapsed_ms)
+            response.headers["X-Request-ID"] = rid
+            return response
+        except Exception as exc:
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
+            log.error("request_failed", method=method, path=path, error=str(exc)[:200], elapsed_ms=elapsed_ms)
+            raise
+        finally:
+            request_id_var.reset(token)
 
 
 _vrt_timer = None
@@ -11,25 +49,29 @@ _vrt_timer = None
 def _vrt_rebuild_loop():
     """Background thread that rebuilds VRT mosaics every 2 minutes.
     Runs independently of requests so health checks are never blocked."""
-    import time
+    import time as _time
     while True:
         try:
             from hole_finder.api.routes.raster_tiles import _get_dem_vrts
+            t0 = _time.perf_counter()
             vrts = _get_dem_vrts()
-            print(f"[vrt] Rebuilt {len(vrts)} DEM VRT mosaics")
+            elapsed_ms = round((_time.perf_counter() - t0) * 1000, 1)
+            log.info("vrt_rebuild_complete", vrt_count=len(vrts), elapsed_ms=elapsed_ms)
         except Exception as e:
-            print(f"[vrt] Rebuild failed (non-fatal): {e}")
-        time.sleep(120)
+            log.warning("vrt_rebuild_failed", error=str(e)[:200])
+        _time.sleep(120)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import threading
     import hole_finder.detection.passes  # noqa: F401
+    log.info("app_startup", version=_load_info().get("version", "unknown"))
     # Start VRT rebuild loop in a daemon thread — runs forever, never blocks requests
     global _vrt_timer
     _vrt_timer = threading.Thread(target=_vrt_rebuild_loop, daemon=True)
     _vrt_timer.start()
     yield
+    log.info("app_shutdown")
 
 
 def create_app() -> FastAPI:
@@ -41,6 +83,9 @@ def create_app() -> FastAPI:
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
     )
+
+    # Request logging middleware (must be added BEFORE CORS so it wraps everything)
+    app.add_middleware(RequestLoggingMiddleware)
 
     app.add_middleware(
         CORSMiddleware,
@@ -99,7 +144,6 @@ def create_app() -> FastAPI:
 def _load_info() -> dict:
     """Load info.yml for version display."""
     from pathlib import Path
-
     info_candidates = [
         Path(__file__).parent.parent.parent / "info.yml",
         Path("/app/info.yml"),
@@ -126,10 +170,8 @@ def _load_info() -> dict:
 def _mount_frontend(app: FastAPI) -> None:
     """Mount built frontend static files with SPA fallback."""
     from pathlib import Path
-
     from fastapi.responses import FileResponse
     from fastapi.staticfiles import StaticFiles
-
     # Check for static dir (Docker) then frontend/dist (dev)
     for candidate in [
         Path(__file__).parent.parent.parent / "static",
@@ -140,12 +182,10 @@ def _mount_frontend(app: FastAPI) -> None:
             break
     else:
         return  # no frontend built
-
     # Mount /assets for hashed JS/CSS bundles
     assets_dir = static_dir / "assets"
     if assets_dir.exists():
         app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="static-assets")
-
     # SPA catch-all: serve index.html for any non-API, non-asset route
     index_path = str(static_dir / "index.html")
 

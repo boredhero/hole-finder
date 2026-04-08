@@ -1,11 +1,13 @@
 """Multi-pass result fusion using DBSCAN clustering and weighted scoring."""
 
+import time
 from collections import defaultdict
 
 import numpy as np
 from sklearn.cluster import DBSCAN
 
 from hole_finder.detection.base import Candidate, FeatureType
+from hole_finder.utils.log_manager import log
 
 
 class ResultFuser:
@@ -22,6 +24,7 @@ class ResultFuser:
         self.weights = weights or {}
         self.multi_pass_bonus = multi_pass_bonus
         self.min_confidence = min_confidence
+        log.debug("result_fuser_init", eps_m=eps_m, multi_pass_bonus=multi_pass_bonus, min_confidence=min_confidence, weights=self.weights)
 
     def fuse(self, candidates: list[tuple[str, Candidate]]) -> list[Candidate]:
         """Cluster and merge candidates from multiple passes.
@@ -33,8 +36,12 @@ class ResultFuser:
             Merged candidates with fused confidence scores
         """
         if not candidates:
+            log.debug("fusion_skip_empty", reason="no candidates to fuse")
             return []
-
+        t0 = time.perf_counter()
+        input_count = len(candidates)
+        source_passes = sorted(set(pn for pn, _ in candidates))
+        log.info("fusion_start", input_candidates=input_count, source_passes=source_passes, eps_m=self.eps_m, min_confidence=self.min_confidence)
         # Extract coordinates for clustering (approximate meters from degrees)
         coords = np.array(
             [[c.geometry.y, c.geometry.x] for _, c in candidates]
@@ -50,12 +57,18 @@ class ResultFuser:
         if len(candidates) == 1:
             _, cand = candidates[0]
             if cand.score >= self.min_confidence:
+                log.info("fusion_single_candidate", score=round(cand.score, 3), accepted=True, elapsed_ms=round((time.perf_counter() - t0) * 1000, 2))
                 return [cand]
+            log.info("fusion_single_candidate", score=round(cand.score, 3), accepted=False, min_confidence=self.min_confidence, elapsed_ms=round((time.perf_counter() - t0) * 1000, 2))
             return []
-
         # Cluster with DBSCAN
+        dbscan_t0 = time.perf_counter()
         clustering = DBSCAN(eps=self.eps_m, min_samples=1).fit(coords_m)
         labels = clustering.labels_
+        dbscan_elapsed = time.perf_counter() - dbscan_t0
+        num_clusters = len(set(labels) - {-1})
+        num_noise = int(np.sum(labels == -1))
+        log.info("dbscan_complete", eps_m=self.eps_m, input_points=len(candidates), num_clusters=num_clusters, noise_points=num_noise, elapsed_ms=round(dbscan_elapsed * 1000, 2))
 
         # Group candidates by cluster
         clusters: dict[int, list[tuple[str, Candidate]]] = defaultdict(list)
@@ -69,10 +82,14 @@ class ResultFuser:
             if merged_candidate.score >= self.min_confidence:
                 merged.append(merged_candidate)
 
+        elapsed = time.perf_counter() - t0
+        confidence_scores = [c.score for c in merged]
+        log.info("fusion_complete", input_candidates=input_count, output_candidates=len(merged), clusters=num_clusters, min_score=round(min(confidence_scores), 3) if confidence_scores else 0.0, max_score=round(max(confidence_scores), 3) if confidence_scores else 0.0, elapsed_ms=round(elapsed * 1000, 2))
         return sorted(merged, key=lambda c: c.score, reverse=True)
 
     def _merge_cluster(self, cluster: list[tuple[str, Candidate]]) -> Candidate:
         """Merge candidates in a spatial cluster into a single detection."""
+        log.debug("merge_cluster_start", cluster_size=len(cluster), passes=[pn for pn, _ in cluster])
         pass_names = set()
         weighted_scores: list[float] = []
         total_weight = 0.0
@@ -126,7 +143,7 @@ class ResultFuser:
             outline = max(outlines, key=lambda o: o.area)
 
         from shapely.geometry import Point
-
+        log.debug("merge_cluster_complete", num_passes=len(pass_names), passes=sorted(pass_names), confidence=round(confidence, 3), feature_type=str(feature_type), has_outline=outline is not None)
         return Candidate(
             geometry=Point(float(np.mean(lons)), float(np.mean(lats))),
             outline=outline,

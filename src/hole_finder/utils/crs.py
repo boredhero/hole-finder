@@ -4,14 +4,16 @@ import re
 from pathlib import Path
 from typing import Union
 
-from hole_finder.utils.logging import log
+from hole_finder.utils.log_manager import log
 
 _UTM_ZONE_RE = re.compile(r'UTM zone (\d+)([NS])')
 
 
 def utm_zone_from_lon(lon: float) -> int:
     """Get UTM zone number from longitude."""
-    return int((lon + 180) / 6) + 1
+    zone = int((lon + 180) / 6) + 1
+    log.debug("utm_zone_from_lon", lon=lon, zone=zone)
+    return zone
 
 
 def epsg_from_lonlat(lon: float, lat: float) -> int:
@@ -19,9 +21,10 @@ def epsg_from_lonlat(lon: float, lat: float) -> int:
     Returns EPSG for WGS84 UTM North (326xx) or South (327xx).
     """
     zone = utm_zone_from_lon(lon)
-    if lat >= 0:
-        return 32600 + zone
-    return 32700 + zone
+    hemisphere = "north" if lat >= 0 else "south"
+    epsg = 32600 + zone if lat >= 0 else 32700 + zone
+    log.debug("epsg_from_lonlat", lon=lon, lat=lat, zone=zone, hemisphere=hemisphere, epsg=epsg)
+    return epsg
 
 
 def resolve_epsg(crs_source: Union["rasterio.crs.CRS", str, Path, None]) -> int:
@@ -34,17 +37,22 @@ def resolve_epsg(crs_source: Union["rasterio.crs.CRS", str, Path, None]) -> int:
     """
     import rasterio
     from pyproj import CRS as PyprojCRS
+    log.debug("resolve_epsg_start", input_type=type(crs_source).__name__, raw=str(crs_source)[:80] if crs_source else "None")
     # If given a Path, open the file and extract CRS
     if isinstance(crs_source, (str, Path)):
         path = Path(crs_source)
         if path.exists() and path.suffix in (".tif", ".tiff"):
+            log.debug("crs_resolve_from_file", path=str(path))
             with rasterio.open(path) as src:
                 crs_source = src.crs
+            log.debug("crs_extracted_from_file", path=str(path), crs=str(crs_source)[:80])
         else:
             # Treat as WKT string
             try:
                 crs_source = PyprojCRS(crs_source)
-            except Exception:
+                log.debug("crs_parsed_from_wkt", wkt=str(crs_source)[:80])
+            except Exception as e:
+                log.error("crs_wkt_parse_failed", input=str(crs_source)[:120], error=str(e), exception=True)
                 raise ValueError(f"Cannot parse CRS from string: {str(crs_source)[:120]}")
     if crs_source is None:
         raise ValueError("CRS is None — file has no CRS metadata embedded")
@@ -57,7 +65,8 @@ def resolve_epsg(crs_source: Union["rasterio.crs.CRS", str, Path, None]) -> int:
     # Convert to pyproj CRS for compound CRS handling
     try:
         pcrs = PyprojCRS(crs_source)
-    except Exception:
+    except Exception as e:
+        log.error("crs_pyproj_parse_failed", raw=str(crs_source)[:120], error=str(e), exception=True)
         raise ValueError(f"Cannot parse CRS: {str(crs_source)[:120]}")
     # Try direct epsg on pyproj CRS (sometimes rasterio fails but pyproj succeeds)
     direct = pcrs.to_epsg()
@@ -66,6 +75,7 @@ def resolve_epsg(crs_source: Union["rasterio.crs.CRS", str, Path, None]) -> int:
         return direct
     # Extract horizontal component from compound CRS
     if pcrs.is_compound and pcrs.sub_crs_list:
+        log.debug("crs_compound_detected", sub_crs_count=len(pcrs.sub_crs_list), raw=str(crs_source)[:80])
         horiz = pcrs.sub_crs_list[0]
         h_epsg = horiz.to_epsg()
         if h_epsg:

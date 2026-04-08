@@ -6,6 +6,7 @@ Tiles organized by county folders on S3.
 """
 
 import re
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -13,7 +14,7 @@ import httpx
 from shapely.geometry import Polygon, box
 
 from hole_finder.ingest.sources.base import DataSource, TileInfo
-from hole_finder.utils.logging import log
+from hole_finder.utils.log_manager import log
 
 NOAA_S3_BASE = "https://noaa-nos-coastal-lidar-pds.s3.amazonaws.com"
 NOAA_S3_PREFIX = "laz/geoid18/6209"
@@ -30,15 +31,22 @@ def _county_to_s3_folder(county_name: str) -> str:
 
 async def _resolve_county(lat: float, lon: float) -> str | None:
     """Resolve lat/lon to county name via FCC Census Area API."""
+    log.debug("fcc_county_resolve_start", lat=lat, lon=lon)
+    resolve_start = time.monotonic()
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get("https://geo.fcc.gov/api/census/area", params={"lat": lat, "lon": lon, "format": "json"})
             resp.raise_for_status()
             results = resp.json().get("results", [])
+            elapsed = round(time.monotonic() - resolve_start, 2)
             if results:
-                return results[0].get("county_name")
+                county = results[0].get("county_name")
+                log.info("fcc_county_resolved", lat=lat, lon=lon, county=county, elapsed_s=elapsed)
+                return county
+            log.warning("fcc_county_no_results", lat=lat, lon=lon, elapsed_s=elapsed)
     except Exception as e:
-        log.warning("fcc_county_resolve_failed", lat=lat, lon=lon, error=str(e))
+        elapsed = round(time.monotonic() - resolve_start, 2)
+        log.warning("fcc_county_resolve_failed", lat=lat, lon=lon, error=str(e), elapsed_s=elapsed, exception=True)
     return None
 
 
@@ -48,18 +56,27 @@ async def _list_s3_tiles(county_folder: str) -> list[tuple[str, str]]:
     tiles = []
     prefix = f"{NOAA_S3_PREFIX}/{county_folder}/"
     marker = ""
+    log.debug("s3_list_tiles_start", county_folder=county_folder, prefix=prefix)
+    list_start = time.monotonic()
+    page_count = 0
     async with httpx.AsyncClient(timeout=30.0) as client:
         for _ in range(20):  # Max 20 pages of 1000
             params = {"prefix": prefix, "max-keys": "1000"}
             if marker:
                 params["marker"] = marker
-            resp = await client.get(f"{NOAA_S3_BASE}/", params=params)
-            resp.raise_for_status()
+            try:
+                resp = await client.get(f"{NOAA_S3_BASE}/", params=params)
+                resp.raise_for_status()
+            except Exception as e:
+                log.error("s3_list_page_failed", county_folder=county_folder, page=page_count, error=str(e), exception=True)
+                raise
+            page_count += 1
             import xml.etree.ElementTree as ET
             root = ET.fromstring(resp.text)
             ns = {'s3': 'http://s3.amazonaws.com/doc/2006-03-01/'}
             contents = root.findall('.//s3:Contents', ns)
             if not contents:
+                log.debug("s3_list_page_empty", county_folder=county_folder, page=page_count)
                 break
             for c in contents:
                 key = c.find('s3:Key', ns).text
@@ -71,6 +88,8 @@ async def _list_s3_tiles(county_folder: str) -> list[tuple[str, str]]:
             is_truncated = root.findtext('{http://s3.amazonaws.com/doc/2006-03-01/}IsTruncated', 'false')
             if is_truncated.lower() != 'true':
                 break
+    elapsed = round(time.monotonic() - list_start, 2)
+    log.info("s3_list_tiles_complete", county_folder=county_folder, pages=page_count, copc_tiles=len(tiles), elapsed_s=elapsed)
     return tiles
 
 
@@ -83,6 +102,8 @@ class NCLidarSource(DataSource):
 
     async def discover_tiles(self, bbox: Polygon) -> AsyncIterator[TileInfo]:
         """Discover NC COPC tiles by resolving bbox center to county, listing S3."""
+        bounds = bbox.bounds
+        log.info("nc_discover_tiles_start", bbox_minx=bounds[0], bbox_miny=bounds[1], bbox_maxx=bounds[2], bbox_maxy=bounds[3])
         centroid = bbox.centroid
         county_name = await _resolve_county(centroid.y, centroid.x)
         if not county_name:
@@ -93,7 +114,7 @@ class NCLidarSource(DataSource):
         try:
             tile_list = await _list_s3_tiles(folder)
         except Exception as e:
-            log.warning("nc_s3_list_failed", folder=folder, error=str(e))
+            log.warning("nc_s3_list_failed", folder=folder, error=str(e), exception=True)
             return
         if not tile_list:
             log.info("nc_s3_no_tiles", folder=folder)
@@ -116,16 +137,24 @@ class NCLidarSource(DataSource):
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest_path = dest_dir / tile.filename
         if dest_path.exists():
+            log.debug("nc_tile_cached", source_id=tile.source_id, path=str(dest_path))
             return dest_path
-        log.info("downloading_tile", dest=str(dest_path), url=tile.url[:120])
-        async with httpx.AsyncClient(timeout=600.0, follow_redirects=True) as client:
-            async with client.stream("GET", tile.url) as response:
-                response.raise_for_status()
-                total = int(response.headers.get("content-length", 0))
-                downloaded = 0
-                with open(dest_path, "wb") as f:
-                    async for chunk in response.aiter_bytes(chunk_size=1024 * 256):
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                log.info("download_complete", path=str(dest_path), bytes=downloaded, expected=total)
+        log.info("nc_download_start", source_id=tile.source_id, url=tile.url[:120], dest=str(dest_path))
+        dl_start = time.monotonic()
+        try:
+            async with httpx.AsyncClient(timeout=600.0, follow_redirects=True) as client:
+                async with client.stream("GET", tile.url) as response:
+                    response.raise_for_status()
+                    total = int(response.headers.get("content-length", 0))
+                    downloaded = 0
+                    with open(dest_path, "wb") as f:
+                        async for chunk in response.aiter_bytes(chunk_size=1024 * 256):
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                    elapsed = round(time.monotonic() - dl_start, 2)
+                    log.info("nc_download_complete", source_id=tile.source_id, path=str(dest_path), bytes=downloaded, expected=total, elapsed_s=elapsed)
+        except Exception as e:
+            elapsed = round(time.monotonic() - dl_start, 2)
+            log.error("nc_download_failed", source_id=tile.source_id, url=tile.url[:120], error=str(e), elapsed_s=elapsed, exception=True)
+            raise
         return dest_path

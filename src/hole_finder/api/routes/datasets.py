@@ -1,5 +1,7 @@
 """Dataset management endpoints."""
 
+import time
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from hole_finder.api.deps import get_db
 from hole_finder.api.schemas import DatasetOut
 from hole_finder.db.models import Dataset
+from hole_finder.utils.log_manager import log
 
 router = APIRouter(tags=["datasets"])
 
@@ -14,8 +17,11 @@ router = APIRouter(tags=["datasets"])
 @router.get("/datasets")
 async def list_datasets(db: AsyncSession = Depends(get_db)):
     """List all ingested LiDAR datasets."""
+    log.debug("list_datasets_requested")
+    t0 = time.perf_counter()
     result = await db.execute(select(Dataset).order_by(Dataset.created_at.desc()))
     datasets = result.scalars().all()
+    log.info("datasets_listed", count=len(datasets), elapsed_ms=round((time.perf_counter() - t0) * 1000, 1))
     return {
         "datasets": [
             DatasetOut(

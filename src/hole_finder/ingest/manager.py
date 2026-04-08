@@ -4,6 +4,7 @@ Source resolution: coordinates → FCC reverse geocode → state code → source
 No region polygons needed for bbox/zip searches.
 """
 
+import time
 from pathlib import Path
 
 import httpx
@@ -23,7 +24,7 @@ from hole_finder.ingest.sources.tnm_lidar import TNMLidarSource
 from hole_finder.ingest.sources.usgs_3dep import USGS3DEPSource
 from hole_finder.ingest.sources.va_lidar import VALidarSource
 from hole_finder.ingest.sources.wv_lidar import WVLidarSource
-from hole_finder.utils.logging import log
+from hole_finder.utils.log_manager import log
 
 # Registry of all available data sources
 SOURCE_REGISTRY: dict[str, type[DataSource]] = {
@@ -59,13 +60,17 @@ STATE_SOURCES: dict[str, list[str]] = {
 def get_source(name: str) -> DataSource:
     """Get a data source instance by name."""
     if name not in SOURCE_REGISTRY:
+        log.error("get_source_unknown", source=name, available=str(list(SOURCE_REGISTRY.keys())))
         raise KeyError(f"Unknown source: {name!r}. Available: {list(SOURCE_REGISTRY.keys())}")
+    log.debug("get_source", source=name)
     return SOURCE_REGISTRY[name]()
 
 
 def resolve_state(lat: float, lon: float) -> str | None:
     """Reverse geocode lat/lon to US state code via FCC Area API.
     Returns 2-letter state code (e.g. 'PA', 'NC') or None if outside US."""
+    log.debug("fcc_geocode_request", lat=round(lat, 5), lon=round(lon, 5))
+    geocode_start = time.monotonic()
     try:
         resp = httpx.get(
             "https://geo.fcc.gov/api/census/area",
@@ -74,10 +79,15 @@ def resolve_state(lat: float, lon: float) -> str | None:
         )
         resp.raise_for_status()
         results = resp.json().get("results", [])
+        elapsed = round(time.monotonic() - geocode_start, 2)
         if results:
-            return results[0].get("state_code")
+            state_code = results[0].get("state_code")
+            log.debug("fcc_geocode_resolved", lat=round(lat, 5), lon=round(lon, 5), state=state_code, elapsed_s=elapsed)
+            return state_code
+        log.debug("fcc_geocode_no_results", lat=round(lat, 5), lon=round(lon, 5), elapsed_s=elapsed)
     except Exception as e:
-        log.warning("fcc_geocode_failed", lat=lat, lon=lon, error=str(e))
+        elapsed = round(time.monotonic() - geocode_start, 2)
+        log.warning("fcc_geocode_failed", lat=lat, lon=lon, error=str(e), elapsed_s=elapsed, exception=True)
     return None
 
 
@@ -88,9 +98,15 @@ def get_sources_for_location(lat: float, lon: float) -> list[str]:
     state = resolve_state(lat, lon)
     if state:
         log.info("state_resolved", state=state, lat=round(lat, 4), lon=round(lon, 4))
-        for s in STATE_SOURCES.get(state, []):
+        state_specific = STATE_SOURCES.get(state, [])
+        for s in state_specific:
             sources.append(s)
+        if state_specific:
+            log.debug("state_sources_added", state=state, sources=str(state_specific))
+    else:
+        log.info("state_unresolved", lat=round(lat, 4), lon=round(lon, 4), reason="outside_us_or_geocode_failed")
     sources.append("tnm")
+    log.info("source_chain_resolved", lat=round(lat, 4), lon=round(lon, 4), sources=str(sources))
     return sources
 
 
@@ -98,15 +114,22 @@ async def discover_tiles_for_bbox(bbox: Polygon, lat: float, lon: float) -> tupl
     """Discover tiles for a bbox, trying sources in order until one returns results.
     Skips TNM legacy tiles that lack CRS metadata (2001-era data with State Plane coords).
     Returns (tiles, source_name_used)."""
+    bounds = bbox.bounds
+    log.info("discover_tiles_for_bbox_start", lat=round(lat, 4), lon=round(lon, 4), bbox_minx=bounds[0], bbox_miny=bounds[1], bbox_maxx=bounds[2], bbox_maxy=bounds[3])
+    discover_start = time.monotonic()
     sources = get_sources_for_location(lat, lon)
-    for src_name in sources:
+    for src_idx, src_name in enumerate(sources):
         src = get_source(src_name)
         tiles = []
+        src_start = time.monotonic()
+        log.debug("source_discovery_attempt", source=src_name, source_index=src_idx, total_sources=len(sources))
         try:
             async for t in src.discover_tiles(bbox):
                 tiles.append(t)
         except Exception as e:
-            log.warning("source_discovery_failed", source=src_name, error=str(e))
+            log.warning("source_discovery_failed", source=src_name, error=str(e), exception=True)
+        src_elapsed = round(time.monotonic() - src_start, 2)
+        log.debug("source_discovery_result", source=src_name, raw_tiles=len(tiles), elapsed_s=src_elapsed)
         if tiles:
             # TNM can return legacy tiles (pre-2010) with no embedded CRS — these use
             # unknown State Plane coords and produce garbage results. Filter them out.
@@ -117,9 +140,14 @@ async def discover_tiles_for_bbox(bbox: Polygon, lat: float, lon: float) -> tupl
                 if len(tiles) < before:
                     log.warning("tnm_legacy_filtered", before=before, after=len(tiles), dropped=before - len(tiles), reason="pre-2010 or unknown-year legacy tiles")
             if tiles:
-                log.info("source_resolved", source=src_name, tiles=len(tiles))
+                total_elapsed = round(time.monotonic() - discover_start, 2)
+                log.info("source_resolved", source=src_name, tiles=len(tiles), sources_tried=src_idx + 1, total_elapsed_s=total_elapsed)
                 return tiles, src_name
             log.info("source_empty_after_filter", source=src_name)
+        else:
+            log.debug("source_returned_empty", source=src_name)
+    total_elapsed = round(time.monotonic() - discover_start, 2)
+    log.warning("discover_tiles_for_bbox_no_results", lat=round(lat, 4), lon=round(lon, 4), sources_tried=len(sources), total_elapsed_s=total_elapsed)
     return [], "none"
 
 
@@ -132,11 +160,18 @@ async def download_tiles(
     source = get_source(source_name)
     if dest_dir is None:
         dest_dir = settings.raw_dir / source_name
+    log.info("download_tiles_start", source=source_name, tile_count=len(tiles), dest_dir=str(dest_dir))
+    batch_start = time.monotonic()
     paths = []
-    for tile in tiles:
+    failed = 0
+    for idx, tile in enumerate(tiles):
         try:
             path = await source.download_tile(tile, dest_dir)
             paths.append(path)
+            log.debug("download_tiles_progress", source=source_name, completed=idx + 1, total=len(tiles), tile=tile.source_id)
         except Exception as e:
-            log.error("download_failed", tile=tile.source_id, error=str(e))
+            failed += 1
+            log.error("download_failed", source=source_name, tile=tile.source_id, error=str(e), exception=True)
+    batch_elapsed = round(time.monotonic() - batch_start, 2)
+    log.info("download_tiles_complete", source=source_name, succeeded=len(paths), failed=failed, total=len(tiles), elapsed_s=batch_elapsed, dest_dir=str(dest_dir))
     return paths

@@ -18,7 +18,7 @@ import click
 import httpx
 
 from hole_finder.config import settings
-from hole_finder.utils.logging import log, setup_logging
+from hole_finder.utils.log_manager import log
 
 DOWNLOADS = {
     "pasda_karst": {
@@ -73,7 +73,6 @@ DOWNLOADS = {
 @click.option("--data-dir", default=None, help="Data directory (default: from config)")
 def main(data_dir: str | None):
     """Print instructions for downloading ground truth datasets."""
-    setup_logging()
     data_path = Path(data_dir) if data_dir else settings.data_dir
     gt_dir = data_path / "ground_truth"
 

@@ -15,10 +15,12 @@ Process safety: Each worker process imports independently and detects
 its own GPU state.
 """
 
+import time
+
 import numpy as np
 from scipy import ndimage as scipy_ndimage
 
-from hole_finder.utils.logging import log
+from hole_finder.utils.log_manager import log
 
 # Detect CuPy at import time (once per process)
 _HAS_CUPY = False
@@ -35,8 +37,10 @@ try:
     log.info("cupy_available", device=str(cupy.cuda.Device(0)))
 except ImportError:
     _CUPY_REASON = "cupy not installed"
+    log.debug("cupy_import_failed", reason="cupy not installed")
 except Exception as e:
     _CUPY_REASON = f"cupy init failed: {e}"
+    log.warning("cupy_init_failed", error=str(e), exception=True)
 
 if not _HAS_CUPY and _CUPY_REASON:
     log.info("cupy_unavailable", reason=_CUPY_REASON)
@@ -53,11 +57,17 @@ def label(mask: np.ndarray) -> tuple[np.ndarray, int]:
     Uses CuPy on GPU when available. Returns numpy arrays because
     downstream code (Shapely, region_stats) uses numpy/scipy.
     """
+    backend = "gpu" if _HAS_CUPY else "cpu"
+    t0 = time.perf_counter()
     if _HAS_CUPY:
         gpu_mask = cupy.asarray(mask)
         gpu_labeled, num = cupy_ndimage.label(gpu_mask)
-        return cupy.asnumpy(gpu_labeled), int(num)
-    return scipy_ndimage.label(mask)
+        labeled, num_features = cupy.asnumpy(gpu_labeled), int(num)
+    else:
+        labeled, num_features = scipy_ndimage.label(mask)
+    elapsed = time.perf_counter() - t0
+    log.debug("label_complete", backend=backend, mask_shape=list(mask.shape), num_features=num_features, elapsed_ms=round(elapsed * 1000, 2), memory_mb=round(mask.nbytes / 1e6, 2))
+    return labeled, num_features
 
 
 def region_stats(
@@ -76,16 +86,18 @@ def region_stats(
     Returns dict with numpy arrays:
         areas_px, centroids, max_vals, min_vals, sum_vals, mean_vals
     """
+    t0 = time.perf_counter()
     labels = np.arange(1, num_features + 1)
     use_mask = mask if mask is not None else (labeled > 0).astype(np.float32)
-
     areas = scipy_ndimage.sum(use_mask, labeled, labels).astype(np.float64)
     max_vals = np.asarray(scipy_ndimage.maximum(data, labeled, labels))
     min_vals = np.asarray(scipy_ndimage.minimum(data, labeled, labels))
     sum_vals = np.asarray(scipy_ndimage.sum(data, labeled, labels))
     mean_vals = np.asarray(scipy_ndimage.mean(data, labeled, labels))
     centroids = scipy_ndimage.center_of_mass(use_mask, labeled, labels)
-
+    elapsed = time.perf_counter() - t0
+    total_memory_mb = round((data.nbytes + labeled.nbytes) / 1e6, 2)
+    log.debug("region_stats_complete", backend="cpu", num_features=num_features, data_shape=list(data.shape), elapsed_ms=round(elapsed * 1000, 2), memory_mb=total_memory_mb)
     return {
         "areas_px": np.asarray(areas, dtype=np.float64),
         "max_vals": np.asarray(max_vals, dtype=np.float64),

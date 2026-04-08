@@ -11,19 +11,33 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from hole_finder.utils.logging import log
+from hole_finder.utils.log_manager import log
 
 
 def _run(cmd: list[str], timeout: int = 300) -> None:
     """Run a subprocess, raise on failure."""
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    log.debug("subprocess_start", cmd=cmd[0], args=cmd[1:4], timeout=timeout)
+    t0 = time.perf_counter()
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        elapsed = time.perf_counter() - t0
+        log.error("subprocess_timeout", cmd=cmd[0], timeout=timeout, elapsed_s=round(elapsed, 3))
+        raise
+    except FileNotFoundError:
+        log.error("subprocess_not_found", cmd=cmd[0], exception=True)
+        raise
+    elapsed = time.perf_counter() - t0
     if result.returncode != 0:
+        log.error("subprocess_failed", cmd=cmd[0], exit_code=result.returncode, elapsed_s=round(elapsed, 3), stderr=result.stderr[:300])
         raise RuntimeError(f"{cmd[0]} failed (exit {result.returncode}): {result.stderr[:500]}")
+    log.debug("subprocess_complete", cmd=cmd[0], exit_code=result.returncode, elapsed_s=round(elapsed, 3))
 
 
 def _get_wbt(verbose: bool = False):
     """Get a WhiteboxTools instance."""
     import whitebox
+    log.debug("wbt_init", verbose=verbose)
     wbt = whitebox.WhiteboxTools()
     wbt.set_verbose_mode(verbose)
     return wbt
@@ -34,6 +48,7 @@ def _wbt_check(ret: int, name: str, out: str, dem_input: str | None = None) -> N
     On ghost output (rc=0 but no file), re-runs with verbose to capture diagnostics.
     """
     if ret != 0:
+        log.error("wbt_failed", tool=name, exit_code=ret, output=out)
         raise RuntimeError(f"WhiteboxTools {name} failed (exit {ret})")
     if not Path(out).exists():
         diag = ""
@@ -46,6 +61,7 @@ def _wbt_check(ret: int, name: str, out: str, dem_input: str | None = None) -> N
                     getattr(wbt_verbose, name)(dem_input, out)
                 diag = buf.getvalue()[:1000]
             except Exception as e:
+                log.error("wbt_verbose_rerun_failed", tool=name, error=str(e), exception=True)
                 diag = f"verbose re-run failed: {e}"
         log.error("wbt_ghost_output", tool=name, output=out, input=dem_input, verbose_output=diag)
         raise RuntimeError(f"WhiteboxTools {name} returned 0 but output missing: {out}")
@@ -71,73 +87,92 @@ def _timed_derivative(fn):
 
 @_timed_derivative
 def compute_hillshade(dem: str, out: str) -> str:
-    _run(["gdaldem", "hillshade", dem, out, "-az", "315", "-alt", "45",
-          "-co", "COMPRESS=DEFLATE", "-co", "TILED=YES", "-q"])
+    log.debug("compute_hillshade_start", dem=dem, output=out)
+    _run(["gdaldem", "hillshade", dem, out, "-az", "315", "-alt", "45", "-co", "COMPRESS=DEFLATE", "-co", "TILED=YES", "-q"])
+    log.debug("compute_hillshade_done", output=out, size_bytes=Path(out).stat().st_size if Path(out).exists() else 0)
     return out
 
 
 @_timed_derivative
 def compute_slope(dem: str, out: str) -> str:
-    _run(["gdaldem", "slope", dem, out,
-          "-co", "COMPRESS=DEFLATE", "-co", "TILED=YES", "-q"])
+    log.debug("compute_slope_start", dem=dem, output=out)
+    _run(["gdaldem", "slope", dem, out, "-co", "COMPRESS=DEFLATE", "-co", "TILED=YES", "-q"])
+    log.debug("compute_slope_done", output=out, size_bytes=Path(out).stat().st_size if Path(out).exists() else 0)
     return out
 
 
 @_timed_derivative
 def compute_tpi(dem: str, out: str) -> str:
-    _run(["gdaldem", "TPI", dem, out,
-          "-co", "COMPRESS=DEFLATE", "-co", "TILED=YES", "-q"])
+    log.debug("compute_tpi_start", dem=dem, output=out)
+    _run(["gdaldem", "TPI", dem, out, "-co", "COMPRESS=DEFLATE", "-co", "TILED=YES", "-q"])
+    log.debug("compute_tpi_done", output=out, size_bytes=Path(out).stat().st_size if Path(out).exists() else 0)
     return out
 
 
 @_timed_derivative
 def compute_roughness(dem: str, out: str) -> str:
-    _run(["gdaldem", "roughness", dem, out,
-          "-co", "COMPRESS=DEFLATE", "-co", "TILED=YES", "-q"])
+    log.debug("compute_roughness_start", dem=dem, output=out)
+    _run(["gdaldem", "roughness", dem, out, "-co", "COMPRESS=DEFLATE", "-co", "TILED=YES", "-q"])
+    log.debug("compute_roughness_done", output=out, size_bytes=Path(out).stat().st_size if Path(out).exists() else 0)
     return out
 
 
 @_timed_derivative
 def compute_svf(dem: str, out: str) -> str:
+    log.debug("compute_svf_start", dem=dem, output=out)
     wbt = _get_wbt()
     if hasattr(wbt, 'sky_view_factor'):
+        log.debug("compute_svf_using", method="sky_view_factor")
         ret = wbt.sky_view_factor(dem, out)
     elif hasattr(wbt, 'viewshed'):
+        log.debug("compute_svf_using", method="multidirectional_hillshade_fallback")
         ret = wbt.multidirectional_hillshade(dem, out)
     else:
+        log.error("compute_svf_no_method_available")
         raise RuntimeError("WhiteboxTools has no sky_view_factor or suitable alternative")
     _wbt_check(ret, "sky_view_factor", out)
+    log.debug("compute_svf_done", output=out, size_bytes=Path(out).stat().st_size if Path(out).exists() else 0)
     return out
 
 
 @_timed_derivative
 def compute_lrm(dem: str, out: str, kernel: int = 100) -> str:
+    log.debug("compute_lrm_start", dem=dem, output=out, kernel=kernel)
     wbt = _get_wbt()
     if hasattr(wbt, 'deviation_from_mean'):
+        log.debug("compute_lrm_using", method="deviation_from_mean")
         ret = wbt.deviation_from_mean(dem, out, filterx=kernel, filtery=kernel)
     elif hasattr(wbt, 'dev_from_mean_elev'):
+        log.debug("compute_lrm_using", method="dev_from_mean_elev")
         ret = wbt.dev_from_mean_elev(dem, out, filterx=kernel, filtery=kernel)
     elif hasattr(wbt, 'diff_from_mean_elev'):
+        log.debug("compute_lrm_using", method="diff_from_mean_elev")
         ret = wbt.diff_from_mean_elev(dem, out, filterx=kernel, filtery=kernel)
     else:
+        log.error("compute_lrm_no_method_available")
         raise RuntimeError("WhiteboxTools has no deviation_from_mean or suitable alternative")
     _wbt_check(ret, "lrm", out)
+    log.debug("compute_lrm_done", output=out, kernel=kernel, size_bytes=Path(out).stat().st_size if Path(out).exists() else 0)
     return out
 
 
 @_timed_derivative
 def compute_profile_curvature(dem: str, out: str) -> str:
+    log.debug("compute_profile_curvature_start", dem=dem, output=out)
     wbt = _get_wbt()
     ret = wbt.profile_curvature(dem, out)
     _wbt_check(ret, "profile_curvature", out)
+    log.debug("compute_profile_curvature_done", output=out, size_bytes=Path(out).stat().st_size if Path(out).exists() else 0)
     return out
 
 
 @_timed_derivative
 def compute_plan_curvature(dem: str, out: str) -> str:
+    log.debug("compute_plan_curvature_start", dem=dem, output=out)
     wbt = _get_wbt()
     ret = wbt.plan_curvature(dem, out)
     _wbt_check(ret, "plan_curvature", out)
+    log.debug("compute_plan_curvature_done", output=out, size_bytes=Path(out).stat().st_size if Path(out).exists() else 0)
     return out
 
 
@@ -145,22 +180,27 @@ def compute_plan_curvature(dem: str, out: str) -> str:
 def compute_fill_difference(dem: str, filled: str, out: str) -> str:
     """Subtract original DEM from filled DEM using rasterio (trivial operation)."""
     import rasterio
+    log.debug("compute_fill_difference_start", dem=dem, filled=filled, output=out)
     with rasterio.open(dem) as src_dem, rasterio.open(filled) as src_filled:
         dem_arr = src_dem.read(1)
         filled_arr = src_filled.read(1)
+        log.debug("compute_fill_difference_arrays", dem_shape=dem_arr.shape, filled_shape=filled_arr.shape)
         diff = (filled_arr - dem_arr).astype("float32")
         profile = src_dem.profile.copy()
         profile.update(dtype="float32", compress="deflate")
         with rasterio.open(out, "w", **profile) as dst:
             dst.write(diff, 1)
+    log.debug("compute_fill_difference_done", output=out, size_bytes=Path(out).stat().st_size if Path(out).exists() else 0)
     return out
 
 
 @_timed_derivative
 def fill_depressions(dem: str, out: str) -> str:
+    log.info("fill_depressions_start", dem=dem, output=out)
     wbt = _get_wbt()
     ret = wbt.fill_depressions(dem, out)
     if ret == 0 and Path(out).exists():
+        log.info("fill_depressions_primary_ok", dem=dem, output=out, size_bytes=Path(out).stat().st_size)
         return out
     log.warning("fill_depressions_primary_failed", dem=dem, ret=ret, output_exists=Path(out).exists())
     # Fallback 1: WBT breach_depressions_least_cost (different Rust code path, WBT-recommended)
@@ -218,7 +258,7 @@ def compute_all_derivatives(
     Timing is collected here and fed back to the profiler if one is active.
     """
     from hole_finder.utils.perf import get_profiler
-
+    log.info("compute_all_derivatives_start", dem=str(dem_path), filled_dem=str(filled_dem_path), output_dir=str(output_dir), max_workers=max_workers)
     output_dir.mkdir(parents=True, exist_ok=True)
     dem = str(dem_path)
     filled = str(filled_dem_path)
@@ -251,6 +291,8 @@ def compute_all_derivatives(
         else:
             to_compute.append((name, fn, args, out_path))
 
+    if cached_names:
+        log.info("derivatives_cache_hits", cached_names=cached_names, count=len(cached_names))
     if not to_compute:
         log.info("all_derivatives_cached", count=len(results))
         return results

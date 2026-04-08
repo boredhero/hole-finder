@@ -7,10 +7,12 @@ to avoid leaking system info that could help attackers fingerprint the server.
 import os
 import platform
 import shutil
+import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
+from hole_finder.utils.log_manager import log
 from hole_finder.utils.perf import get_cpu_count, get_gpu_info, get_memory_mb
 
 router = APIRouter(prefix="/api/debug", tags=["debug"])
@@ -19,6 +21,7 @@ router = APIRouter(prefix="/api/debug", tags=["debug"])
 def _check_debug_enabled() -> None:
     """Raise 404 if debug mode is not enabled — makes endpoint invisible."""
     if os.environ.get("HOLE_FINDER_DEBUG", "").strip() not in ("1", "true", "yes"):
+        log.debug("debug_endpoint_blocked", reason="HOLE_FINDER_DEBUG not set")
         raise HTTPException(status_code=404, detail="Not found")
 
 
@@ -30,9 +33,9 @@ async def system_info() -> dict[str, Any]:
     so the endpoint doesn't even show up in scans.
     """
     _check_debug_enabled()
-
+    log.info("debug_system_info_request")
+    t0 = time.perf_counter()
     gpu = get_gpu_info()
-
     info: dict[str, Any] = {
         "platform": platform.platform(),
         "python": platform.python_version(),
@@ -46,38 +49,41 @@ async def system_info() -> dict[str, Any]:
         },
         "gpu": gpu,
     }
-
     for tool in ["pdal", "gdaldem", "whitebox_tools"]:
         info[f"has_{tool}"] = shutil.which(tool) is not None
-
     try:
         import cupy
         info["cupy_version"] = cupy.__version__
     except ImportError:
         info["cupy_version"] = None
-
+        log.debug("debug_cupy_not_available")
     try:
         import torch
         info["torch_version"] = torch.__version__
         info["torch_cuda"] = torch.cuda.is_available()
     except ImportError:
         info["torch_version"] = None
-
+        log.debug("debug_torch_not_available")
     try:
         import scipy
         info["scipy_version"] = scipy.__version__
     except ImportError:
         info["scipy_version"] = None
-
+        log.debug("debug_scipy_not_available")
+    log.info("debug_system_info_complete", rss_mb=info["memory"]["rss_mb"], cpu_count=info["cpu"]["count_available"], has_gpu=gpu is not None, elapsed_ms=round((time.perf_counter() - t0) * 1000, 1))
     return info
 
 
 @router.get("/storage")
 async def storage_stats() -> dict[str, Any]:
     """Storage usage breakdown — always available (no secrets exposed)."""
+    log.info("debug_storage_stats_request")
+    t0 = time.perf_counter()
     from hole_finder.config import settings
     from hole_finder.utils.storage import get_storage_stats
-
     if not settings.data_dir.exists():
+        log.warning("debug_storage_data_dir_missing", data_dir=str(settings.data_dir))
         return {"error": "data_dir not found"}
-    return get_storage_stats(settings.data_dir)
+    stats = get_storage_stats(settings.data_dir)
+    log.info("debug_storage_stats_complete", data_dir=str(settings.data_dir), elapsed_ms=round((time.perf_counter() - t0) * 1000, 1))
+    return stats

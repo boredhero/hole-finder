@@ -29,7 +29,7 @@ from shapely.ops import transform as shapely_transform
 
 from hole_finder.config import settings
 from hole_finder.utils.crs import resolve_epsg
-from hole_finder.utils.logging import log
+from hole_finder.utils.log_manager import log, set_request_id
 from hole_finder.utils.perf import PipelineProfiler, get_profiler, new_profiler
 from hole_finder.workers.celery_app import app
 
@@ -72,71 +72,86 @@ async def _async_session():
 def download_tile(self, source_name: str, tile_info_dict: dict, dest_dir: str):
     """Download a single LiDAR tile from the given source."""
     from shapely.geometry import shape
-
     from hole_finder.ingest.manager import get_source
     from hole_finder.ingest.sources.base import TileInfo
-
+    set_request_id(self.request.id[:8] if self.request.id else "no-id")
+    t0 = time.perf_counter()
+    filename = tile_info_dict.get("filename", "unknown")
+    log.info("download_tile_start", task_id=self.request.id, source=source_name, filename=filename, dest_dir=dest_dir, file_size_bytes=tile_info_dict.get("file_size_bytes"))
     self.update_state(state="PROGRESS", meta={"percent": 0, "message": "Starting download"})
-
-    source = get_source(source_name)
-    tile = TileInfo(
-        source_id=tile_info_dict["source_id"],
-        filename=tile_info_dict["filename"],
-        url=tile_info_dict["url"],
-        bbox=shape(tile_info_dict["bbox"]),
-        crs=tile_info_dict.get("crs", 4326),
-        file_size_bytes=tile_info_dict.get("file_size_bytes"),
-        format=tile_info_dict.get("format", "laz"),
-    )
-
-    dest = Path(dest_dir)
-    result_path = asyncio.run(source.download_tile(tile, dest))
-
-    self.update_state(state="PROGRESS", meta={"percent": 100, "message": "Complete"})
-    return str(result_path)
+    try:
+        source = get_source(source_name)
+        tile = TileInfo(
+            source_id=tile_info_dict["source_id"],
+            filename=tile_info_dict["filename"],
+            url=tile_info_dict["url"],
+            bbox=shape(tile_info_dict["bbox"]),
+            crs=tile_info_dict.get("crs", 4326),
+            file_size_bytes=tile_info_dict.get("file_size_bytes"),
+            format=tile_info_dict.get("format", "laz"),
+        )
+        dest = Path(dest_dir)
+        result_path = asyncio.run(source.download_tile(tile, dest))
+        elapsed = round(time.perf_counter() - t0, 2)
+        result_size = Path(result_path).stat().st_size if result_path and Path(result_path).exists() else 0
+        log.info("download_tile_complete", filename=filename, source=source_name, elapsed_s=elapsed, result_size_mb=round(result_size / 1e6, 1), result_path=str(result_path))
+        self.update_state(state="PROGRESS", meta={"percent": 100, "message": "Complete"})
+        return str(result_path)
+    except Exception as e:
+        elapsed = round(time.perf_counter() - t0, 2)
+        log.error("download_tile_failed", filename=filename, source=source_name, error=str(e), elapsed_s=elapsed, retry=self.request.retries, max_retries=self.max_retries, exception=True)
+        raise self.retry(exc=e, countdown=30 * (self.request.retries + 1))
 
 
 @app.task(bind=True, queue="process")
 def process_tile(self, tile_path: str, output_dir: str | None = None):
     """Generate DEM and derivatives for a tile."""
     from hole_finder.processing.pipeline import ProcessingPipeline
-
-    self.update_state(state="PROGRESS", meta={"percent": 0, "message": "Processing"})
-
+    set_request_id(self.request.id[:8] if self.request.id else "no-id")
+    t0 = time.perf_counter()
     input_path = Path(tile_path)
     out_dir = Path(output_dir) if output_dir else settings.processed_dir
-
-    pipeline = ProcessingPipeline(output_dir=out_dir)
-
-    if input_path.suffix in (".laz", ".las"):
-        result = pipeline.process_point_cloud(input_path)
-    elif input_path.suffix in (".tif", ".tiff"):
-        result = pipeline.process_dem_file(input_path)
-    else:
-        raise ValueError(f"Unsupported file type: {input_path.suffix}")
-
-    self.update_state(state="PROGRESS", meta={"percent": 100, "message": "Complete"})
-    return {
-        "dem_path": str(result.dem_path),
-        "derivative_paths": {k: str(v) for k, v in result.derivative_paths.items()},
-        "resolution_m": result.resolution_m,
-        "crs": result.crs,
-    }
+    log.info("process_tile_start", task_id=self.request.id, tile_path=tile_path, suffix=input_path.suffix, output_dir=str(out_dir))
+    self.update_state(state="PROGRESS", meta={"percent": 0, "message": "Processing"})
+    try:
+        pipeline = ProcessingPipeline(output_dir=out_dir)
+        if input_path.suffix in (".laz", ".las"):
+            result = pipeline.process_point_cloud(input_path)
+        elif input_path.suffix in (".tif", ".tiff"):
+            result = pipeline.process_dem_file(input_path)
+        else:
+            log.error("process_tile_unsupported_format", tile_path=tile_path, suffix=input_path.suffix)
+            raise ValueError(f"Unsupported file type: {input_path.suffix}")
+        elapsed = round(time.perf_counter() - t0, 2)
+        log.info("process_tile_complete", tile=input_path.name, elapsed_s=elapsed, dem_path=str(result.dem_path), derivatives=list(result.derivative_paths.keys()), resolution_m=result.resolution_m, crs=result.crs)
+        self.update_state(state="PROGRESS", meta={"percent": 100, "message": "Complete"})
+        return {
+            "dem_path": str(result.dem_path),
+            "derivative_paths": {k: str(v) for k, v in result.derivative_paths.items()},
+            "resolution_m": result.resolution_m,
+            "crs": result.crs,
+        }
+    except ValueError:
+        raise
+    except Exception as e:
+        elapsed = round(time.perf_counter() - t0, 2)
+        log.error("process_tile_failed", tile_path=tile_path, error=str(e), elapsed_s=elapsed, exception=True)
+        raise
 
 
 @app.task(bind=True, queue="detect")
 def run_detection(self, dem_path: str, derivative_paths: dict, pass_config_name: str):
     """Run detection passes on a processed tile and store results in PostGIS."""
     import hole_finder.detection.passes  # register passes
-
     from geoalchemy2.shape import from_shape
     from pyproj import Transformer
     from shapely.geometry import Point
-
     from hole_finder.db.models import Detection
     from hole_finder.db.models import FeatureType as DBFeatureType
     from hole_finder.detection.runner import PassRunner
-
+    set_request_id(self.request.id[:8] if self.request.id else "no-id")
+    t0_task = time.perf_counter()
+    log.info("run_detection_start", task_id=self.request.id, dem_path=dem_path, pass_config=pass_config_name, derivative_count=len(derivative_paths))
     profiler = new_profiler(f"run_detection:{Path(dem_path).stem}")
     self.update_state(state="PROGRESS", meta={"percent": 0, "message": "Running detection"})
 
@@ -217,7 +232,8 @@ def run_detection(self, dem_path: str, derivative_paths: dict, pass_config_name:
 
     with profiler.stage("db_storage", parent="detection", detections=len(good)):
         stored = asyncio.run(_store())
-
+    elapsed_task = round(time.perf_counter() - t0_task, 2)
+    log.info("run_detection_complete", dem=Path(dem_path).stem, raw_candidates=len(candidates), stored=stored, filtered_out=len(candidates) - len(good), elapsed_s=elapsed_task)
     self.update_state(state="PROGRESS", meta={"percent": 100, "message": "Complete"})
     summary = profiler.log_summary()
     return {"raw_candidates": len(candidates), "stored_detections": stored, "profile": summary}
@@ -232,7 +248,9 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
     """
     from hole_finder.db.models import Job, JobStatus
     from hole_finder.ingest.manager import get_source
-
+    set_request_id(job_id[:8] if job_id else "no-id")
+    t0_pipeline = time.perf_counter()
+    log.info("full_pipeline_start", task_id=self.request.id, job_id=job_id[:8], pass_config=pass_config, bbox_type=bbox_geojson.get("type", "unknown"))
     profiler = new_profiler(f"full_pipeline:{job_id[:8]}")
 
     def _update_job(status: str, progress: float, message: str = "", summary: dict | None = None, stage: str | None = None):
@@ -273,10 +291,12 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                         return job.config.get("center_lat", centroid.y), job.config.get("center_lon", centroid.x)
                 return centroid.y, centroid.x
             center_lat, center_lon = asyncio.run(_get_center())
+            log.info("tile_discovery_starting", job_id=job_id[:8], center_lat=round(center_lat, 4), center_lon=round(center_lon, 4))
             tiles, source_used = asyncio.run(discover_tiles_for_bbox(bbox, center_lat, center_lon))
             ctx["tiles_found"] = len(tiles)
-
+            log.info("tile_discovery_result", job_id=job_id[:8], tiles_found=len(tiles), source=source_used)
         if not tiles:
+            log.warning("full_pipeline_no_tiles", job_id=job_id[:8], center_lat=round(centroid.y, 4), center_lon=round(centroid.x, 4))
             _update_job("FAILED", 0, "No LiDAR data found in this area. Try zooming out to a larger area or panning to a different location.", summary={"tiles": 0, "detections": 0})
             return
 
@@ -289,7 +309,7 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
             return 500
         config_limit = asyncio.run(_get_tile_limit())
         tile_limit = min(len(tiles), config_limit)
-
+        log.info("tile_limit_resolved", job_id=job_id[:8], config_limit=config_limit, available_tiles=len(tiles), effective_limit=tile_limit)
         # Sort tiles by distance to bbox center so we get radial coverage
         centroid = bbox.centroid
         tiles.sort(key=lambda t: t.bbox.centroid.distance(centroid))
@@ -351,8 +371,8 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                                         job.progress = pct
                                         job.result_summary = {"stage": "downloading", "source": source_name, "download_mb": dl_so_far, "downloaded": _dl_done, "tile_limit": tile_limit}
                                         await session.commit()
-                            except Exception:
-                                pass  # non-fatal — progress display only
+                            except Exception as _prog_err:
+                                log.debug("download_progress_update_failed", tile=tile.filename, error=str(_prog_err)[:200])
                             return (str(path), size_bytes)
                         except Exception as e:
                             _dl_done += 1
@@ -366,6 +386,7 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
             downloaded = [p for p, _ in dl_results]
             total_download_bytes = sum(s for _, s in dl_results)
             dl_mb = round(total_download_bytes / 1e6, 1)
+            log.info("download_phase_complete", job_id=job_id[:8], downloaded=len(downloaded), failed=tile_limit - len(downloaded), total_mb=dl_mb)
             _update_job("RUNNING", 40, f"Downloaded {len(downloaded)}/{tile_limit} tiles ({dl_mb} MB)", stage="analyzing",
                          summary={"stage": "analyzing", "source": source_name, "download_mb": dl_mb})
             ctx["downloaded"] = len(downloaded)
@@ -373,6 +394,7 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
             ctx["download_mb"] = dl_mb
 
         if not downloaded:
+            log.error("full_pipeline_no_downloads", job_id=job_id[:8], tile_limit=tile_limit)
             _update_job("FAILED", 40, "No tiles downloaded successfully")
             return
 
@@ -447,7 +469,7 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                     log.info("tile_crs_details", tile=Path(tile_path).name, resolved_epsg=tile_result.crs, raw_epsg="unknown", is_compound=False)
                 log.info("processing_complete", index=i, tile=Path(tile_path).name, process_s=result["process_s"], derivatives=list(tile_result.derivative_paths.keys()), crs=tile_result.crs, dem=str(tile_result.dem_path))
             except Exception as e:
-                log.error("process_tile_failed", tile=tile_path, error=str(e))
+                log.error("process_tile_failed", tile=tile_path, error=str(e), exception=True)
                 result["error"] = f"process: {e}"
                 result["error_type"] = "process"
                 return result
@@ -603,7 +625,7 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
             except Exception as e:
                 _err_str = str(e)
                 _err_type = "crs_infinity" if "infinity" in _err_str else "detect_other"
-                log.error("detect_tile_failed", tile=tile_path, error=_err_str, error_type=_err_type)
+                log.error("detect_tile_failed", tile=tile_path, error=_err_str, error_type=_err_type, exception=True)
                 result["error"] = f"detect: {e}"
                 result["error_type"] = _err_type
 
@@ -642,6 +664,7 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
         # Each PDAL subprocess uses ~6 GB RAM. 6 × 6 GB = ~36 GB peak on 64 GB box.
         PARALLEL_TILES = 6
         tile_results = []
+        log.info("parallel_processing_start", job_id=job_id[:8], tiles=len(downloaded), parallel=PARALLEL_TILES, pass_config=pass_config)
         with profiler.stage("parallel_processing", parallel=PARALLEL_TILES) as pctx:
             with ThreadPoolExecutor(max_workers=PARALLEL_TILES) as executor:
                 futures = {
@@ -661,7 +684,7 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                                     f"{total_detections} detections so far",
                                     stage=tile_stage)
                     except Exception as e:
-                        log.error("tile_thread_failed", index=idx, error=str(e))
+                        log.error("tile_thread_failed", index=idx, error=str(e), exception=True)
                         tile_results.append({"index": idx, "error": str(e)})
 
             pctx["tiles_ok"] = sum(1 for r in tile_results if "error" not in r)
@@ -679,7 +702,9 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                 error_types[etype] = error_types.get(etype, 0) + 1
         tiles_ok = sum(1 for r in tile_results if "error" not in r)
         tiles_failed = sum(1 for r in tile_results if "error" in r)
+        elapsed_pipeline = round(time.perf_counter() - t0_pipeline, 2)
         log.info("pipeline_error_summary", job_id=job_id[:8], tiles_ok=tiles_ok, tiles_failed=tiles_failed, total_detections=total_detections, error_types=error_types if error_types else None)
+        log.info("full_pipeline_complete", job_id=job_id[:8], elapsed_s=elapsed_pipeline, tiles_discovered=len(tiles), tiles_downloaded=len(downloaded), download_mb=dl_mb, total_detections=total_detections, tiles_ok=tiles_ok, tiles_failed=tiles_failed)
         _update_job("COMPLETED", 100, summary={
             "tiles_discovered": len(tiles),
             "tiles_downloaded": len(downloaded),
@@ -691,8 +716,9 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
             "tile_errors": tile_errors if tile_errors else None,
             "profile": profile_summary,
         })
-
     except Exception as e:
+        elapsed_pipeline = round(time.perf_counter() - t0_pipeline, 2)
+        log.error("full_pipeline_failed", job_id=job_id[:8], error=str(e)[:500], elapsed_s=elapsed_pipeline, exception=True)
         _update_job("FAILED", 0, str(e)[:500])
         raise
 
@@ -703,29 +729,36 @@ def run_ml_pass(self, dem_path: str, pass_name: str, config: dict):
     from hole_finder.detection.base import PassInput
     from hole_finder.detection.registry import PassRegistry
     from hole_finder.utils.raster_io import read_dem
-
+    set_request_id(self.request.id[:8] if self.request.id else "no-id")
+    t0 = time.perf_counter()
+    log.info("run_ml_pass_start", task_id=self.request.id, dem_path=dem_path, pass_name=pass_name)
     self.update_state(state="PROGRESS", meta={"percent": 0, "message": f"Running {pass_name}"})
-
-    dem, transform, crs = read_dem(Path(dem_path))
-
-    pass_cls = PassRegistry.get(pass_name)
-    detection_pass = pass_cls()
-
-    pass_input = PassInput(
-        dem=dem,
-        transform=transform,
-        crs=crs,
-        derivatives={},
-        config=config.get(f"passes.{pass_name}", {}),
-    )
-
-    candidates = detection_pass.run(pass_input)
-
-    self.update_state(state="PROGRESS", meta={"percent": 100, "message": "Complete"})
-    return {
-        "pass_name": pass_name,
-        "num_detections": len(candidates),
-    }
+    try:
+        dem, transform, crs = read_dem(Path(dem_path))
+        log.info("ml_pass_dem_loaded", pass_name=pass_name, dem_shape=list(dem.shape), crs=crs)
+        pass_cls = PassRegistry.get(pass_name)
+        detection_pass = pass_cls()
+        pass_input = PassInput(
+            dem=dem,
+            transform=transform,
+            crs=crs,
+            derivatives={},
+            config=config.get(f"passes.{pass_name}", {}),
+        )
+        t_run = time.perf_counter()
+        candidates = detection_pass.run(pass_input)
+        run_elapsed = round(time.perf_counter() - t_run, 2)
+        elapsed = round(time.perf_counter() - t0, 2)
+        log.info("run_ml_pass_complete", pass_name=pass_name, num_detections=len(candidates), run_elapsed_s=run_elapsed, total_elapsed_s=elapsed)
+        self.update_state(state="PROGRESS", meta={"percent": 100, "message": "Complete"})
+        return {
+            "pass_name": pass_name,
+            "num_detections": len(candidates),
+        }
+    except Exception as e:
+        elapsed = round(time.perf_counter() - t0, 2)
+        log.error("run_ml_pass_failed", pass_name=pass_name, dem_path=dem_path, error=str(e), elapsed_s=elapsed, exception=True)
+        raise
 
 
 @app.task(bind=True, queue="process")
@@ -736,9 +769,19 @@ def run_storage_eviction(self):
     by evicting oldest-accessed first.
     """
     from hole_finder.utils.storage import evict
-
+    set_request_id(self.request.id[:8] if self.request.id else "evict")
+    t0 = time.perf_counter()
+    log.info("storage_eviction_start", task_id=self.request.id, data_dir=str(settings.data_dir))
     data_dir = settings.data_dir
     if not data_dir.exists():
+        log.warning("storage_eviction_skipped", reason="data_dir_not_found", data_dir=str(data_dir))
         return {"skipped": True, "reason": "data_dir not found"}
-
-    return evict(data_dir)
+    try:
+        result = evict(data_dir)
+        elapsed = round(time.perf_counter() - t0, 2)
+        log.info("storage_eviction_complete", elapsed_s=elapsed, result=result)
+        return result
+    except Exception as e:
+        elapsed = round(time.perf_counter() - t0, 2)
+        log.error("storage_eviction_failed", error=str(e), elapsed_s=elapsed, exception=True)
+        raise

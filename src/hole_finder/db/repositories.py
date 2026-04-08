@@ -1,5 +1,6 @@
 """Data access layer for spatial queries."""
 
+import time
 import uuid
 
 from geoalchemy2.functions import ST_DWithin, ST_GeogFromWKB, ST_MakeEnvelope
@@ -7,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hole_finder.db.models import Detection, FeatureType, GroundTruthSite
+from hole_finder.utils.log_manager import log
 
 
 async def get_detections_in_bbox(
@@ -20,6 +22,8 @@ async def get_detections_in_bbox(
     limit: int = 10000,
 ) -> list[Detection]:
     """Query detections within a bounding box."""
+    log.debug("query_detections_in_bbox_start", west=west, south=south, east=east, north=north, srid=4326, min_confidence=min_confidence, feature_types=str(feature_types) if feature_types else "all", limit=limit)
+    t0 = time.perf_counter()
     envelope = ST_MakeEnvelope(west, south, east, north, 4326)
     stmt = (
         select(Detection)
@@ -30,8 +34,16 @@ async def get_detections_in_bbox(
     )
     if feature_types:
         stmt = stmt.where(Detection.feature_type.in_(feature_types))
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
+    try:
+        result = await session.execute(stmt)
+        rows = list(result.scalars().all())
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        log.info("query_detections_in_bbox_complete", result_count=len(rows), elapsed_ms=round(elapsed_ms, 2), west=west, south=south, east=east, north=north, min_confidence=min_confidence, limit=limit)
+        return rows
+    except Exception as e:
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        log.error("query_detections_in_bbox_failed", error=str(e), elapsed_ms=round(elapsed_ms, 2), west=west, south=south, east=east, north=north, exception=True)
+        raise
 
 
 async def get_detections_near_point(
@@ -41,6 +53,8 @@ async def get_detections_near_point(
     radius_m: float = 200.0,
 ) -> list[Detection]:
     """Query detections within radius_m meters of a point."""
+    log.debug("query_detections_near_point_start", lat=lat, lon=lon, radius_m=radius_m, srid=4326)
+    t0 = time.perf_counter()
     point_wkt = f"SRID=4326;POINT({lon} {lat})"
     stmt = select(Detection).where(
         ST_DWithin(
@@ -49,8 +63,16 @@ async def get_detections_near_point(
             radius_m,
         )
     )
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
+    try:
+        result = await session.execute(stmt)
+        rows = list(result.scalars().all())
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        log.info("query_detections_near_point_complete", result_count=len(rows), elapsed_ms=round(elapsed_ms, 2), lat=lat, lon=lon, radius_m=radius_m)
+        return rows
+    except Exception as e:
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        log.error("query_detections_near_point_failed", error=str(e), elapsed_ms=round(elapsed_ms, 2), lat=lat, lon=lon, radius_m=radius_m, exception=True)
+        raise
 
 
 async def get_ground_truth_near_point(
@@ -60,6 +82,8 @@ async def get_ground_truth_near_point(
     radius_m: float = 200.0,
 ) -> list[GroundTruthSite]:
     """Query ground truth sites within radius_m meters of a point."""
+    log.debug("query_ground_truth_near_point_start", lat=lat, lon=lon, radius_m=radius_m, srid=4326)
+    t0 = time.perf_counter()
     point_wkt = f"SRID=4326;POINT({lon} {lat})"
     stmt = select(GroundTruthSite).where(
         ST_DWithin(
@@ -68,11 +92,29 @@ async def get_ground_truth_near_point(
             radius_m,
         )
     )
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
+    try:
+        result = await session.execute(stmt)
+        rows = list(result.scalars().all())
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        log.info("query_ground_truth_near_point_complete", result_count=len(rows), elapsed_ms=round(elapsed_ms, 2), lat=lat, lon=lon, radius_m=radius_m)
+        return rows
+    except Exception as e:
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        log.error("query_ground_truth_near_point_failed", error=str(e), elapsed_ms=round(elapsed_ms, 2), lat=lat, lon=lon, radius_m=radius_m, exception=True)
+        raise
 
 
 async def get_detection_by_id(
     session: AsyncSession, detection_id: uuid.UUID
 ) -> Detection | None:
-    return await session.get(Detection, detection_id)
+    log.debug("query_detection_by_id_start", detection_id=str(detection_id))
+    t0 = time.perf_counter()
+    try:
+        result = await session.get(Detection, detection_id)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        log.info("query_detection_by_id_complete", detection_id=str(detection_id), found=result is not None, elapsed_ms=round(elapsed_ms, 2))
+        return result
+    except Exception as e:
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        log.error("query_detection_by_id_failed", detection_id=str(detection_id), error=str(e), elapsed_ms=round(elapsed_ms, 2), exception=True)
+        raise

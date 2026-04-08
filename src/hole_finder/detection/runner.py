@@ -11,7 +11,7 @@ from hole_finder.detection.base import Candidate, DetectionPass, PassInput
 from hole_finder.detection.fusion import ResultFuser
 from hole_finder.detection.registry import PassRegistry
 from hole_finder.utils.crs import resolve_epsg
-from hole_finder.utils.logging import log
+from hole_finder.utils.log_manager import log
 from hole_finder.utils.perf import get_profiler
 
 
@@ -25,6 +25,7 @@ class PassRunner:
         weights: dict[str, float] | None = None,
         min_confidence: float = 0.3,
     ):
+        log.info("pass_runner_init", pass_names=pass_names, min_confidence=min_confidence, weights=weights)
         self.passes = PassRegistry.get_pass_chain(pass_names)
         self.config = config or {}
         self.fuser = ResultFuser(weights=weights, min_confidence=min_confidence)
@@ -33,20 +34,22 @@ class PassRunner:
     def from_toml(cls, toml_path: Path) -> "PassRunner":
         """Create a PassRunner from a TOML configuration file."""
         import tomllib
-
-        with open(toml_path, "rb") as f:
-            data = tomllib.load(f)
-
+        log.info("config_load_start", toml_path=str(toml_path))
+        try:
+            with open(toml_path, "rb") as f:
+                data = tomllib.load(f)
+        except Exception as e:
+            log.error("config_load_failed", toml_path=str(toml_path), error=str(e), exception=True)
+            raise
         pipeline = data.get("pipeline", {})
         pass_names = pipeline.get("passes", [])
         min_confidence = pipeline.get("min_confidence", 0.3)
         weights = data.get("weights", {})
-
         # Flatten pass configs: {"passes": {"fill_difference": {...}}} → {"passes.fill_difference": {...}}
         config = {}
         for pass_name, pass_config in data.get("passes", {}).items():
             config[f"passes.{pass_name}"] = pass_config
-
+        log.info("config_loaded", toml_path=str(toml_path), passes=pass_names, min_confidence=min_confidence, weights=weights, num_pass_configs=len(config))
         return cls(
             pass_names=pass_names,
             config=config,
@@ -171,22 +174,20 @@ class PassRunner:
                 return [(detection_pass.name, c) for c in candidates]
             except Exception as e:
                 elapsed = time.perf_counter() - t0
-                log.warning(
-                    "pass_failed",
-                    pass_name=detection_pass.name,
-                    error=str(e),
-                    elapsed_s=round(elapsed, 3),
-                )
+                log.error("pass_failed", pass_name=detection_pass.name, error=str(e), elapsed_s=round(elapsed, 3), exception=True)
                 return []
 
         all_candidates: list[tuple[str, Candidate]] = []
 
         if parallel and len(self.passes) > 1:
-            with ThreadPoolExecutor(max_workers=min(len(self.passes), 8)) as executor:
+            pool_size = min(len(self.passes), 8)
+            log.info("parallel_execution_start", thread_pool_size=pool_size, num_passes=len(self.passes))
+            with ThreadPoolExecutor(max_workers=pool_size) as executor:
                 futures = {executor.submit(_run_single_pass, p): p for p in self.passes}
                 for future in as_completed(futures):
                     all_candidates.extend(future.result())
         else:
+            log.info("sequential_execution_start", num_passes=len(self.passes))
             for detection_pass in self.passes:
                 all_candidates.extend(_run_single_pass(detection_pass))
 

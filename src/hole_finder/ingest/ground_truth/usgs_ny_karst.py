@@ -5,6 +5,7 @@ Download: https://www.sciencebase.gov/catalog/item/562a313ae4b011227bf1fe23
 Format: Geodatabase or shapefile.
 """
 
+import time
 from pathlib import Path
 
 import geopandas as gpd
@@ -13,39 +14,51 @@ from shapely.geometry import Point
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hole_finder.db.models import FeatureType, GroundTruthSite, GroundTruthSource
-from hole_finder.utils.logging import log
+from hole_finder.utils.log_manager import log
 
 
 async def load_usgs_ny_karst(session: AsyncSession, data_dir: str) -> int:
     """Load USGS NY closed depression inventory."""
     base_path = Path(data_dir) / "ground_truth" / "usgs_ny_karst"
-
+    log.info("usgs_ny_karst_load_start", search_path=str(base_path))
     # Try geodatabase first, then shapefile
     gdb_files = list(base_path.glob("*.gdb"))
     shp_files = list(base_path.glob("*.shp"))
-
+    t0 = time.monotonic()
     if gdb_files:
-        gdf = gpd.read_file(gdb_files[0])
+        source_file = str(gdb_files[0])
+        log.info("usgs_ny_karst_reading_geodatabase", file=source_file)
+        try:
+            gdf = gpd.read_file(gdb_files[0])
+        except Exception as e:
+            log.error("usgs_ny_karst_gdb_read_failed", file=source_file, error=str(e), exception=True)
+            return 0
     elif shp_files:
-        gdf = gpd.read_file(shp_files[0])
+        source_file = str(shp_files[0])
+        log.info("usgs_ny_karst_reading_shapefile", file=source_file)
+        try:
+            gdf = gpd.read_file(shp_files[0])
+        except Exception as e:
+            log.error("usgs_ny_karst_shapefile_read_failed", file=source_file, error=str(e), exception=True)
+            return 0
     else:
         log.warning("usgs_ny_not_found", path=str(base_path))
         return 0
-
+    original_crs = str(gdf.crs) if gdf.crs else "none"
     if gdf.crs and gdf.crs.to_epsg() != 4326:
+        log.debug("usgs_ny_karst_reprojecting", from_crs=original_crs, to_crs="EPSG:4326")
         gdf = gdf.to_crs(epsg=4326)
-
+    log.info("usgs_ny_karst_file_loaded", record_count=len(gdf), source_file=source_file, crs=original_crs, elapsed_s=round(time.monotonic() - t0, 2))
     count = 0
+    skipped_empty = 0
     batch = []
-
     for _, row in gdf.iterrows():
         geom = row.geometry
         if geom is None or geom.is_empty:
+            skipped_empty += 1
             continue
-
         if geom.geom_type != "Point":
             geom = geom.centroid
-
         site = GroundTruthSite(
             name=str(row.get("NAME", "") or f"NY-Depression-{count}"),
             feature_type=FeatureType.DEPRESSION,
@@ -60,15 +73,15 @@ async def load_usgs_ny_karst(session: AsyncSession, data_dir: str) -> int:
         )
         batch.append(site)
         count += 1
-
         if len(batch) >= 1000:
             session.add_all(batch)
             await session.flush()
+            log.debug("usgs_ny_karst_batch_flushed", batch_size=1000, running_total=count)
             batch.clear()
-
     if batch:
         session.add_all(batch)
         await session.flush()
-
     await session.commit()
+    elapsed = round(time.monotonic() - t0, 2)
+    log.info("usgs_ny_karst_load_complete", count=count, skipped_empty=skipped_empty, elapsed_s=elapsed)
     return count

@@ -14,7 +14,7 @@ import httpx
 from httpx_retries import RetryTransport, Retry
 
 from hole_finder.config import settings
-from hole_finder.utils.logging import log
+from hole_finder.utils.log_manager import log
 
 # --- Mirror rotation ---
 # Each mirror has independent rate limits. On 429 from one, we try the next.
@@ -48,16 +48,19 @@ def _get_cached(query: str) -> dict | None:
     key = _cache_key(query)
     cache_file = CACHE_DIR / f"{key}.json"
     if not cache_file.exists():
+        log.debug("overpass_cache_miss", key=key[:12])
         return None
     age_s = time.time() - cache_file.stat().st_mtime
     if age_s > CACHE_TTL_S:
+        log.info("overpass_cache_expired", key=key[:12], age_days=round(age_s / 86400, 1), ttl_days=round(CACHE_TTL_S / 86400, 1))
         cache_file.unlink(missing_ok=True)
         return None
     try:
         data = json.loads(cache_file.read_text())
         log.info("overpass_cache_hit", key=key[:12], age_hours=round(age_s / 3600, 1))
         return data
-    except Exception:
+    except Exception as e:
+        log.warning("overpass_cache_read_corrupt", key=key[:12], error=str(e), exception=True)
         cache_file.unlink(missing_ok=True)
         return None
 
@@ -68,9 +71,11 @@ def _set_cached(query: str, data: dict) -> None:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         key = _cache_key(query)
         cache_file = CACHE_DIR / f"{key}.json"
-        cache_file.write_text(json.dumps(data))
+        raw = json.dumps(data)
+        cache_file.write_text(raw)
+        log.debug("overpass_cache_written", key=key[:12], size_kb=round(len(raw) / 1024, 1))
     except Exception as e:
-        log.warning("overpass_cache_write_failed", error=str(e))
+        log.warning("overpass_cache_write_failed", error=str(e), exception=True)
 
 
 def _rate_limit() -> None:
@@ -80,7 +85,9 @@ def _rate_limit() -> None:
         now = time.monotonic()
         elapsed = now - _last_request_time
         if elapsed < _MIN_REQUEST_INTERVAL:
-            time.sleep(_MIN_REQUEST_INTERVAL - elapsed)
+            wait_s = _MIN_REQUEST_INTERVAL - elapsed
+            log.debug("overpass_rate_limit_wait", wait_s=round(wait_s, 2))
+            time.sleep(wait_s)
         _last_request_time = time.monotonic()
 
 

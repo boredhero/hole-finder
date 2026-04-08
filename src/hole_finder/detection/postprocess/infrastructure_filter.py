@@ -6,11 +6,13 @@ detections whose centroid falls inside a buffered feature. Springs are exempt
 from water filtering.
 """
 
+import time
+
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from shapely.ops import unary_union
 from shapely.prepared import prep
 
-from hole_finder.utils.logging import log
+from hole_finder.utils.log_manager import log
 from hole_finder.utils.overpass import query_overpass
 
 # Buffer distances in degrees for line features
@@ -37,8 +39,12 @@ def fetch_infrastructure_polygons(
     );
     out geom;
     """
+    log.debug("overpass_infrastructure_request", bbox=f"{west},{south},{east},{north}")
+    t0 = time.monotonic()
     data = query_overpass(query, timeout=60.0, query_label="infrastructure")
+    elapsed = time.monotonic() - t0
     elements = data.get("elements", [])
+    log.info("overpass_infrastructure_response", element_count=len(elements), elapsed_s=round(elapsed, 3), bbox=f"{west},{south},{east},{north}")
     if not elements:
         log.warning("overpass_no_infrastructure_returned", bbox=f"{west},{south},{east},{north}")
         return {"roads": [], "water": [], "railways": []}
@@ -81,7 +87,8 @@ def fetch_infrastructure_polygons(
                             poly = Polygon(coords)
                             if poly.is_valid and poly.area > 0:
                                 water.append(poly)
-                        except Exception:
+                        except Exception as e:
+                            log.debug("infra_relation_geom_parse_failed", element_id=el.get("id"), error=str(e))
                             continue
     log.info("infrastructure_fetched", roads=len(roads), water=len(water), railways=len(railways), bbox=f"{west},{south},{east},{north}")
     return {"roads": roads, "water": water, "railways": railways}
@@ -102,11 +109,13 @@ def filter_candidates_by_infrastructure(
     Returns:
         list of (candidate, lon, lat) tuples that passed all filters
     """
+    log.debug("infrastructure_filter_start", candidate_count=len(candidates), bbox=f"{west},{south},{east},{north}")
     infra = fetch_infrastructure_polygons(west, south, east, north)
     all_road = infra["roads"]
     all_water = infra["water"]
     all_railway = infra["railways"]
     if not all_road and not all_water and not all_railway:
+        log.info("infrastructure_filter_skipped", reason="no_infrastructure_found", candidate_count=len(candidates))
         return [(c, lon, lat) for c, (lon, lat) in zip(candidates, wgs84_coords)]
     road_geom = prep(unary_union(all_road)) if all_road else None
     water_geom = prep(unary_union(all_water)) if all_water else None
@@ -115,6 +124,7 @@ def filter_candidates_by_infrastructure(
     road_removed = 0
     water_removed = 0
     rail_removed = 0
+    spring_exemptions = 0
     keep: list[tuple] = []
     for c, (lon, lat) in zip(candidates, wgs84_coords):
         pt = Point(lon, lat)
@@ -122,12 +132,15 @@ def filter_candidates_by_infrastructure(
         if road_geom and road_geom.contains(pt):
             road_removed += 1
             continue
-        if water_geom and not is_spring and water_geom.contains(pt):
-            water_removed += 1
-            continue
+        if water_geom and water_geom.contains(pt):
+            if is_spring:
+                spring_exemptions += 1
+            else:
+                water_removed += 1
+                continue
         if rail_geom and rail_geom.contains(pt):
             rail_removed += 1
             continue
         keep.append((c, lon, lat))
-    log.info("infrastructure_filter_result", original=original, remaining=len(keep), road_removed=road_removed, water_removed=water_removed, rail_removed=rail_removed)
+    log.info("infrastructure_filter_result", original=original, remaining=len(keep), road_removed=road_removed, water_removed=water_removed, rail_removed=rail_removed, spring_exemptions=spring_exemptions)
     return keep

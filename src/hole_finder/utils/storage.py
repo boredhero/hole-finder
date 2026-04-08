@@ -14,7 +14,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from hole_finder.utils.logging import log
+from hole_finder.utils.log_manager import log
 
 MAX_AGE_DAYS = 30
 MAX_SIZE_GB = 700
@@ -30,6 +30,7 @@ class FileEntry:
 
 def scan_data_dir(data_dir: Path) -> list[FileEntry]:
     """Scan all files under data_dir, return sorted by last access (oldest first)."""
+    log.debug("scan_data_dir_start", data_dir=str(data_dir))
     entries = []
     for root, _dirs, files in os.walk(data_dir):
         for f in files:
@@ -46,6 +47,8 @@ def scan_data_dir(data_dir: Path) -> list[FileEntry]:
                 continue
     # Sort oldest-accessed first (LRU eviction order)
     entries.sort(key=lambda e: e.last_access)
+    total_bytes = sum(e.size_bytes for e in entries)
+    log.info("scan_data_dir_complete", data_dir=str(data_dir), files=len(entries), total_gb=round(total_bytes / 1e9, 2))
     return entries
 
 
@@ -62,8 +65,10 @@ def evict(
     Phase 1: Delete anything older than max_age_days
     Phase 2: If still over max_size_gb, delete oldest-accessed until under cap
     """
+    log.info("eviction_start", data_dir=str(data_dir), max_age_days=max_age_days, max_size_gb=max_size_gb, dry_run=dry_run)
     entries = scan_data_dir(data_dir)
     if not entries:
+        log.info("eviction_skipped_empty", data_dir=str(data_dir))
         return {"files_scanned": 0, "freed_bytes": 0, "freed_gb": 0.0}
 
     total_bytes = sum(e.size_bytes for e in entries)
@@ -76,6 +81,7 @@ def evict(
     cap_deleted = 0
 
     # Phase 1: Age-based eviction
+    log.debug("eviction_phase1_start", cutoff_age_days=max_age_days, total_files=len(entries))
     remaining = []
     for entry in entries:
         if entry.last_access < cutoff_time:
@@ -99,6 +105,7 @@ def evict(
             remaining.append(entry)
 
     # Phase 2: Size cap eviction (LRU — oldest-accessed first)
+    log.debug("eviction_phase2_start", remaining_files=len(remaining), age_evicted=age_deleted, current_gb=round((total_bytes - freed_bytes) / 1e9, 2), max_gb=max_size_gb)
     current_bytes = total_bytes - freed_bytes
     for entry in remaining:
         if current_bytes <= max_bytes:
@@ -142,6 +149,7 @@ def evict(
 
 def get_storage_stats(data_dir: Path) -> dict:
     """Get current storage usage breakdown."""
+    log.debug("get_storage_stats_start", data_dir=str(data_dir))
     categories = {
         "raw": {"glob": "raw/**/*", "bytes": 0, "files": 0},
         "dem": {"glob": "processed/**/*_dem.tif", "bytes": 0, "files": 0},
@@ -194,6 +202,7 @@ def get_storage_stats(data_dir: Path) -> dict:
         categories["other"]["files"] += 1
 
     total = sum(c["bytes"] for c in categories.values())
+    log.info("get_storage_stats_complete", data_dir=str(data_dir), total_gb=round(total / 1e9, 2), total_files=len(all_files), usage_pct=round(total / (MAX_SIZE_GB * 1e9) * 100, 1) if MAX_SIZE_GB > 0 else 0)
     return {
         "total_gb": round(total / 1e9, 2),
         "max_gb": MAX_SIZE_GB,
@@ -207,10 +216,13 @@ def get_storage_stats(data_dir: Path) -> dict:
 
 def _remove_empty_dirs(root: Path) -> None:
     """Remove empty directories bottom-up."""
+    removed = 0
     for dirpath, dirnames, filenames in os.walk(root, topdown=False):
         if not dirnames and not filenames and Path(dirpath) != root:
             try:
                 Path(dirpath).rmdir()
+                removed += 1
             except OSError as e:
                 log.debug("rmdir_failed", path=dirpath, error=str(e))
-                pass
+    if removed > 0:
+        log.info("empty_dirs_removed", root=str(root), count=removed)
