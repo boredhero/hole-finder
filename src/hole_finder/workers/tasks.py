@@ -543,24 +543,10 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                 # Filter out detections on buildings using OSM data
                 _t = time.perf_counter()
                 if wgs84_points:
-                    from hole_finder.detection.postprocess.building_filter import fetch_building_polygons
-                    from shapely.prepared import prep as shapely_prep
-                    from shapely.geometry import MultiPolygon
+                    from hole_finder.detection.postprocess.building_filter import filter_candidates_by_buildings
                     lons = [p[0] for p in wgs84_points]
                     lats = [p[1] for p in wgs84_points]
-                    buildings = fetch_building_polygons(min(lons), min(lats), max(lons), max(lats))
-                    if buildings:
-                        merged = shapely_prep(MultiPolygon(buildings))
-                        keep = []
-                        for c, (lon, lat) in zip(good, wgs84_points):
-                            if not merged.contains(Point(lon, lat)):
-                                keep.append((c, lon, lat))
-                            else:
-                                log.info("building_filtered", lon=round(lon, 5), lat=round(lat, 5), score=round(c.score, 2))
-                        log.info("building_filter_result", before=len(good), after=len(keep), removed=len(good) - len(keep))
-                        good_with_coords = keep
-                    else:
-                        good_with_coords = list(zip(good, [p[0] for p in wgs84_points], [p[1] for p in wgs84_points]))
+                    good_with_coords = filter_candidates_by_buildings(good, wgs84_points, min(lons), min(lats), max(lons), max(lats))
                 else:
                     good_with_coords = []
                 _timings["building_filter_s"] = round(time.perf_counter() - _t, 3)

@@ -26,23 +26,26 @@ class TestBuildingFilter:
         from hole_finder.detection.postprocess.building_filter import filter_candidates_by_buildings
         building = box(-79.95, 40.47, -79.94, 40.48)  # building polygon
         candidates = [_make_candidate(-79.945, 40.475)]  # inside building
+        coords = [(-79.945, 40.475)]
         with patch("hole_finder.detection.postprocess.building_filter.fetch_building_polygons", return_value=[building]):
-            result = filter_candidates_by_buildings(candidates, -80, 40, -79, 41)
+            result = filter_candidates_by_buildings(candidates, coords, -80, 40, -79, 41)
         assert len(result) == 0
 
     def test_candidate_outside_building_survives(self):
         from hole_finder.detection.postprocess.building_filter import filter_candidates_by_buildings
         building = box(-79.95, 40.47, -79.94, 40.48)
         candidates = [_make_candidate(-79.90, 40.50)]  # outside building
+        coords = [(-79.90, 40.50)]
         with patch("hole_finder.detection.postprocess.building_filter.fetch_building_polygons", return_value=[building]):
-            result = filter_candidates_by_buildings(candidates, -80, 40, -79, 41)
+            result = filter_candidates_by_buildings(candidates, coords, -80, 40, -79, 41)
         assert len(result) == 1
 
     def test_no_buildings_returns_all_candidates(self):
         from hole_finder.detection.postprocess.building_filter import filter_candidates_by_buildings
         candidates = [_make_candidate(-79.945, 40.475), _make_candidate(-79.90, 40.50)]
+        coords = [(-79.945, 40.475), (-79.90, 40.50)]
         with patch("hole_finder.detection.postprocess.building_filter.fetch_building_polygons", return_value=[]):
-            result = filter_candidates_by_buildings(candidates, -80, 40, -79, 41)
+            result = filter_candidates_by_buildings(candidates, coords, -80, 40, -79, 41)
         assert len(result) == 2
 
     def test_mixed_inside_and_outside(self):
@@ -50,10 +53,11 @@ class TestBuildingFilter:
         building = box(-79.95, 40.47, -79.94, 40.48)
         inside = _make_candidate(-79.945, 40.475)
         outside = _make_candidate(-79.90, 40.50)
+        coords = [(-79.945, 40.475), (-79.90, 40.50)]
         with patch("hole_finder.detection.postprocess.building_filter.fetch_building_polygons", return_value=[building]):
-            result = filter_candidates_by_buildings([inside, outside], -80, 40, -79, 41)
+            result = filter_candidates_by_buildings([inside, outside], coords, -80, 40, -79, 41)
         assert len(result) == 1
-        assert result[0].geometry.x == pytest.approx(-79.90)
+        assert result[0][0].geometry.x == pytest.approx(-79.90)
 
 
 class TestCemeteryExclusion:

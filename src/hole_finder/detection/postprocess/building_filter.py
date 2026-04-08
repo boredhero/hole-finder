@@ -8,7 +8,8 @@ produce false LiDAR anomalies, and real features can exist beneath them).
 
 import time
 
-from shapely.geometry import Point, Polygon, MultiPolygon
+from shapely.geometry import Point, Polygon
+from shapely.ops import unary_union
 from shapely.prepared import prep
 
 from hole_finder.utils.log_manager import log
@@ -85,6 +86,7 @@ def fetch_building_polygons(west: float, south: float, east: float, north: float
     [out:json][timeout:30];
     (
       way["building"]({south},{west},{north},{east});
+      relation["building"]({south},{west},{north},{east});
     );
     out geom;
     """
@@ -101,7 +103,6 @@ def fetch_building_polygons(west: float, south: float, east: float, north: float
     # Exclude buildings that sit inside cemetery/graveyard areas
     cemetery_polys = _fetch_cemetery_polygons(south, west, north, east)
     if cemetery_polys:
-        from shapely.ops import unary_union
         cemetery_mask = prep(unary_union(cemetery_polys))
         filtered = [b for b in all_buildings if not cemetery_mask.contains(b.centroid)]
         excluded = len(all_buildings) - len(filtered)
@@ -114,41 +115,30 @@ def fetch_building_polygons(west: float, south: float, east: float, north: float
 
 def filter_candidates_by_buildings(
     candidates: list,
+    wgs84_coords: list[tuple[float, float]],
     west: float, south: float, east: float, north: float,
-) -> list:
+) -> list[tuple]:
     """Remove candidates whose centroid falls inside an OSM building footprint.
-
-    Candidates are expected to have a .geometry attribute (Shapely Point in WGS84).
+    Args:
+        candidates: list of Candidate objects
+        wgs84_coords: list of (lon, lat) tuples matching candidates
+        west/south/east/north: WGS84 bounding box
+    Returns:
+        list of (candidate, lon, lat) tuples that passed the filter
     """
     log.debug("building_filter_start", candidate_count=len(candidates), bbox=f"{west},{south},{east},{north}")
     buildings = fetch_building_polygons(west, south, east, north)
     if not buildings:
         log.info("building_filter_skipped", reason="no_buildings_found", candidate_count=len(candidates))
-        return candidates
-
-    # Merge all buildings into a single MultiPolygon for fast lookup
-    merged = MultiPolygon(buildings)
-    prepared = prep(merged)
-
-    original_count = len(candidates)
-    filtered = []
+        return [(c, lon, lat) for c, (lon, lat) in zip(candidates, wgs84_coords)]
+    merged = prep(unary_union(buildings))
+    keep: list[tuple] = []
     removed = 0
-
-    for c in candidates:
-        # Candidate geometry is in the raster's CRS (UTM), not WGS84 yet.
-        # We need to check in WGS84. The candidates at this point still have
-        # UTM coordinates. We'll accept lon/lat points too.
-        point = c.geometry
-        if prepared.contains(point):
+    for c, (lon, lat) in zip(candidates, wgs84_coords):
+        if merged.contains(Point(lon, lat)):
             removed += 1
+            log.info("building_filtered", lon=round(lon, 5), lat=round(lat, 5), score=round(c.score, 2))
         else:
-            filtered.append(c)
-
-    log.info(
-        "building_filter_applied",
-        original=original_count,
-        removed=removed,
-        remaining=len(filtered),
-        buildings=len(buildings),
-    )
-    return filtered
+            keep.append((c, lon, lat))
+    log.info("building_filter_result", original=len(candidates), removed=removed, remaining=len(keep), buildings=len(buildings))
+    return keep
