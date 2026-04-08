@@ -10,6 +10,7 @@ import rasterio
 from hole_finder.detection.base import Candidate, DetectionPass, PassInput
 from hole_finder.detection.fusion import ResultFuser
 from hole_finder.detection.postprocess.classification import classify_candidate
+from hole_finder.detection.postprocess.morphometrics import compute_morphometrics_for_candidate
 from hole_finder.detection.registry import PassRegistry
 from hole_finder.utils.crs import resolve_epsg
 from hole_finder.utils.log_manager import log
@@ -211,10 +212,20 @@ class PassRunner:
         fused = self.fuser.fuse(all_candidates)
         fusion_elapsed = time.perf_counter() - t0
 
-        # Post-fusion classification: reclassify using fused morphometrics
-        # instead of relying on majority vote from passes (which is dominated
-        # by the 3 passes that hardcode DEPRESSION). The fused candidate has
-        # averaged morphometrics from all contributing passes — best data to classify from.
+        # Post-fusion morphometrics: compute full metrics for each fused candidate
+        # using the merged outline + original DEM. This ensures every candidate has
+        # depth, area, circularity, etc. regardless of which passes detected it.
+        resolution_m = abs(transform[0])
+        morph_computed = 0
+        for candidate in fused:
+            if candidate.outline is not None:
+                full_morph = compute_morphometrics_for_candidate(dem, candidate.outline, transform, resolution_m)
+                if full_morph:
+                    candidate.morphometrics.update(full_morph)
+                    morph_computed += 1
+        if morph_computed:
+            log.info("post_fusion_morphometrics", total=len(fused), computed=morph_computed)
+        # Post-fusion classification: classify using complete morphometrics
         type_changes = 0
         for candidate in fused:
             old_type = candidate.feature_type

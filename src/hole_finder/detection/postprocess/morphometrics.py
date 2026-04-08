@@ -124,6 +124,37 @@ def compute_elongation(mask: NDArray[np.bool_]) -> float:
     return elongation
 
 
+def compute_morphometrics_for_candidate(dem: NDArray[np.float32], outline, transform, resolution_m: float) -> dict[str, float]:
+    """Compute full morphometrics for a single fused candidate using its outline polygon and the DEM.
+    Used post-fusion to ensure every fused candidate has complete morphometric data
+    regardless of which passes detected it. Returns a dict with all standard keys."""
+    from rasterio.features import rasterize
+    from rasterio.transform import rowcol
+    if outline is None or outline.is_empty:
+        return {}
+    minx, miny, maxx, maxy = outline.bounds
+    row_min, col_min = rowcol(transform, minx, maxy)
+    row_max, col_max = rowcol(transform, maxx, miny)
+    row_min, row_max = max(0, min(row_min, row_max)), min(dem.shape[0], max(row_min, row_max) + 1)
+    col_min, col_max = max(0, min(col_min, col_max)), min(dem.shape[1], max(col_min, col_max) + 1)
+    if row_max <= row_min or col_max <= col_min:
+        return {}
+    sub_dem = dem[row_min:row_max, col_min:col_max]
+    from rasterio.transform import Affine
+    sub_transform = transform * Affine.translation(col_min, row_min)
+    mask = rasterize([(outline, 1)], out_shape=sub_dem.shape, transform=sub_transform, fill=0, dtype=np.uint8).astype(bool)
+    if not np.any(mask):
+        return {}
+    depth = compute_depth(sub_dem, mask)
+    area = compute_area(mask, resolution_m)
+    perimeter = compute_perimeter(mask, resolution_m)
+    circ = compute_circularity(area, perimeter)
+    volume = compute_volume(sub_dem, mask, resolution_m)
+    elongation = compute_elongation(mask)
+    k_param = compute_k_parameter(area, depth, volume)
+    return {"depth_m": depth, "area_m2": area, "perimeter_m": perimeter, "circularity": circ, "volume_m3": volume, "elongation": elongation, "k_parameter": k_param, "depth_area_ratio": depth / area if area > 0 else 0}
+
+
 # --- Vectorized batch functions (fast path for all labels at once) ---
 
 def batch_morphometrics(
