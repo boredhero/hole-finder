@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
 
+import httpx
 from shapely.geometry import Polygon
 
 from hole_finder.utils.log_manager import log
@@ -43,6 +44,26 @@ class DataSource(ABC):
     async def download_tile(self, tile: TileInfo, dest_dir: Path) -> Path:
         """Download a single tile. Return local file path."""
         ...
+
+    async def _stream_download(self, url: str, dest_path: Path, timeout: float = 300.0) -> int:
+        """Stream-download a URL to dest_path with atomic write (.tmp + rename).
+        On failure, removes the tmp file so no corrupt partial files remain.
+        Returns bytes downloaded."""
+        tmp_path = dest_path.with_suffix(dest_path.suffix + ".tmp")
+        try:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+                async with client.stream("GET", url) as response:
+                    response.raise_for_status()
+                    downloaded = 0
+                    with open(tmp_path, "wb") as f:
+                        async for chunk in response.aiter_bytes(chunk_size=1024 * 256):
+                            f.write(chunk)
+                            downloaded += len(chunk)
+            tmp_path.rename(dest_path)
+            return downloaded
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
 
     async def download_region(self, bbox: Polygon, dest_dir: Path) -> list[Path]:
         """Download all tiles in a region."""

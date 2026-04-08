@@ -93,17 +93,10 @@ class PASDASource(DataSource):
             return dest_path
         log.info("pasda_download_start", tile=tile.source_id, url=tile.url[:120], dest=str(dest_path))
         dl_start = time.monotonic()
-        bytes_downloaded = 0
         try:
-            async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
-                async with client.stream("GET", tile.url) as response:
-                    response.raise_for_status()
-                    with open(dest_path, "wb") as f:
-                        async for chunk in response.aiter_bytes(chunk_size=1024 * 256):
-                            f.write(chunk)
-                            bytes_downloaded += len(chunk)
+            bytes_downloaded = await self._stream_download(tile.url, dest_path, timeout=300.0)
         except Exception as e:
-            log.error("pasda_download_failed", tile=tile.source_id, bytes_so_far=bytes_downloaded, error=str(e), exception=True)
+            log.error("pasda_download_failed", tile=tile.source_id, error=str(e), exception=True)
             raise
         dl_elapsed = round(time.monotonic() - dl_start, 2)
         size_mb = round(bytes_downloaded / (1024 * 1024), 2)

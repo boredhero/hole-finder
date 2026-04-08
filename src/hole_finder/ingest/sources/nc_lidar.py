@@ -142,19 +142,11 @@ class NCLidarSource(DataSource):
         log.info("nc_download_start", source_id=tile.source_id, url=tile.url[:120], dest=str(dest_path))
         dl_start = time.monotonic()
         try:
-            async with httpx.AsyncClient(timeout=600.0, follow_redirects=True) as client:
-                async with client.stream("GET", tile.url) as response:
-                    response.raise_for_status()
-                    total = int(response.headers.get("content-length", 0))
-                    downloaded = 0
-                    with open(dest_path, "wb") as f:
-                        async for chunk in response.aiter_bytes(chunk_size=1024 * 256):
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                    elapsed = round(time.monotonic() - dl_start, 2)
-                    log.info("nc_download_complete", source_id=tile.source_id, path=str(dest_path), bytes=downloaded, expected=total, elapsed_s=elapsed)
+            downloaded = await self._stream_download(tile.url, dest_path, timeout=600.0)
         except Exception as e:
             elapsed = round(time.monotonic() - dl_start, 2)
             log.error("nc_download_failed", source_id=tile.source_id, url=tile.url[:120], error=str(e), elapsed_s=elapsed, exception=True)
             raise
+        elapsed = round(time.monotonic() - dl_start, 2)
+        log.info("nc_download_complete", source_id=tile.source_id, path=str(dest_path), bytes=downloaded, elapsed_s=elapsed)
         return dest_path
