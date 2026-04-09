@@ -5,6 +5,7 @@ FROM pdal/pdal:latest
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libspatialindex-dev \
+    osmium-tool \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv

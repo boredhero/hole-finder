@@ -1,0 +1,6 @@
+{
+    "include_tags": ["waterway", "natural=water"],
+    "linear_tags": true,
+    "area_tags": true,
+    "format_options": {}
+}

@@ -1,8 +1,8 @@
 """Tests for building and infrastructure postprocess filters.
 
 These filters remove false positives by checking detections against OSM data
-(buildings, roads, waterways, railways). The Overpass API is mocked — we test
-the geometry filtering logic, not the network calls.
+(buildings, roads, waterways, railways). The OSM data source is mocked — we
+test the geometry filtering logic, not the data access.
 """
 
 from unittest.mock import patch
@@ -65,38 +65,13 @@ class TestCemeteryExclusion:
 
     def test_cemetery_buildings_excluded_from_filter(self):
         from hole_finder.detection.postprocess.building_filter import fetch_building_polygons
-        building_in_cemetery = {"type": "way", "geometry": [{"lon": -79.95, "lat": 40.47}, {"lon": -79.94, "lat": 40.47}, {"lon": -79.94, "lat": 40.48}, {"lon": -79.95, "lat": 40.48}, {"lon": -79.95, "lat": 40.47}]}
-        cemetery = {"type": "way", "geometry": [{"lon": -79.96, "lat": 40.46}, {"lon": -79.93, "lat": 40.46}, {"lon": -79.93, "lat": 40.49}, {"lon": -79.96, "lat": 40.49}, {"lon": -79.96, "lat": 40.46}]}
-        building_response = {"elements": [building_in_cemetery]}
-        cemetery_response = {"elements": [cemetery]}
-        # First call = buildings, second call = cemeteries
-        with patch("hole_finder.detection.postprocess.building_filter.query_overpass", side_effect=[building_response, cemetery_response]):
+        building_in_cemetery = box(-79.95, 40.47, -79.94, 40.48)
+        cemetery = box(-79.96, 40.46, -79.93, 40.49)  # covers the building
+        with patch("hole_finder.detection.postprocess.building_filter.get_building_polygons", return_value=[building_in_cemetery]), \
+             patch("hole_finder.detection.postprocess.building_filter.get_cemetery_polygons", return_value=[cemetery]):
             result = fetch_building_polygons(-80, 40, -79, 41)
         # Building inside cemetery should be excluded
         assert len(result) == 0
-
-
-class TestParsePolygons:
-    """Test OSM element → Shapely polygon conversion."""
-
-    def test_way_parsed_to_polygon(self):
-        from hole_finder.detection.postprocess.building_filter import _parse_polygons_from_elements
-        elements = [{"type": "way", "geometry": [{"lon": 0, "lat": 0}, {"lon": 1, "lat": 0}, {"lon": 1, "lat": 1}, {"lon": 0, "lat": 1}, {"lon": 0, "lat": 0}]}]
-        result = _parse_polygons_from_elements(elements)
-        assert len(result) == 1
-        assert result[0].area > 0
-
-    def test_degenerate_way_skipped(self):
-        from hole_finder.detection.postprocess.building_filter import _parse_polygons_from_elements
-        elements = [{"type": "way", "geometry": [{"lon": 0, "lat": 0}, {"lon": 1, "lat": 0}]}]  # only 2 points
-        result = _parse_polygons_from_elements(elements)
-        assert len(result) == 0
-
-    def test_relation_outer_ring_parsed(self):
-        from hole_finder.detection.postprocess.building_filter import _parse_polygons_from_elements
-        elements = [{"type": "relation", "members": [{"role": "outer", "type": "way", "geometry": [{"lon": 0, "lat": 0}, {"lon": 1, "lat": 0}, {"lon": 1, "lat": 1}, {"lon": 0, "lat": 1}, {"lon": 0, "lat": 0}]}]}]
-        result = _parse_polygons_from_elements(elements)
-        assert len(result) == 1
 
 
 # --- Infrastructure Filter ---

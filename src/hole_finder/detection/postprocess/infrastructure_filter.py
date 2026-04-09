@@ -1,19 +1,18 @@
-"""Filter detections that fall on roads, waterways, or railways using OpenStreetMap data.
+"""Filter detections that fall on roads, waterways, or railways using offline OSM data.
 
-Uses the shared Overpass client (retry, mirror rotation, caching, rate limiting)
-to fetch infrastructure polygons/lines for a given bounding box, then excludes
-detections whose centroid falls inside a buffered feature. Springs are exempt
-from water filtering.
+Uses locally-stored Geofabrik PBF + osmium CLI to get infrastructure features,
+then excludes detections whose centroid falls inside a buffered feature.
+Springs are exempt from water filtering.
 """
 
 import time
 
-from shapely.geometry import LineString, MultiPolygon, Point, Polygon
+from shapely.geometry import Point
 from shapely.ops import unary_union
 from shapely.prepared import prep
 
 from hole_finder.utils.log_manager import log
-from hole_finder.utils.overpass import query_overpass
+from hole_finder.utils.osm_data import get_railway_geometries, get_road_geometries, get_water_geometries
 
 # Buffer distances in degrees for line features
 ROAD_BUFFER_DEG = 0.0003   # ~30m — highway cuts are wide
@@ -21,76 +20,33 @@ WATER_BUFFER_DEG = 0.0003  # ~30m — creek/river banks
 RAIL_BUFFER_DEG = 0.0004   # ~40m — rail cuts through hills are wide
 
 
-def fetch_infrastructure_polygons(
-    west: float, south: float, east: float, north: float,
-) -> dict[str, list[Polygon]]:
-    """Fetch OSM roads, waterways, water bodies, and railways via Overpass API.
-    Returns dict with keys 'roads', 'water', 'railways' → lists of buffered Shapely Polygons.
+def _buffer_lines(geometries: list, buffer_deg: float) -> list:
+    """Buffer line geometries into polygons. Polygons pass through unchanged."""
+    result = []
+    for geom in geometries:
+        if geom.geom_type in ("LineString", "MultiLineString"):
+            result.append(geom.buffer(buffer_deg))
+        elif geom.geom_type in ("Polygon", "MultiPolygon"):
+            result.append(geom)
+        else:
+            result.append(geom.buffer(buffer_deg))
+    return result
+
+
+def fetch_infrastructure_polygons(west: float, south: float, east: float, north: float) -> dict[str, list]:
+    """Fetch OSM roads, waterways, water bodies, and railways from offline PBF data.
+    Returns dict with keys 'roads', 'water', 'railways' -> lists of buffered Shapely Polygons.
     """
-    bbox = f"{south},{west},{north},{east}"
-    query = f"""
-    [out:json][timeout:45];
-    (
-      way["highway"~"motorway|trunk|primary|secondary|tertiary|motorway_link|trunk_link|primary_link|secondary_link"]({bbox});
-      way["waterway"~"river|stream|canal|drain|ditch"]({bbox});
-      way["natural"="water"]({bbox});
-      relation["natural"="water"]({bbox});
-      way["railway"~"rail|light_rail"]({bbox});
-    );
-    out geom;
-    """
-    log.debug("overpass_infrastructure_request", bbox=f"{west},{south},{east},{north}")
+    log.debug("infrastructure_fetch_start", bbox=f"{west},{south},{east},{north}")
     t0 = time.monotonic()
-    data = query_overpass(query, timeout=60.0, query_label="infrastructure")
+    raw_roads = get_road_geometries(west, south, east, north)
+    raw_water = get_water_geometries(west, south, east, north)
+    raw_railways = get_railway_geometries(west, south, east, north)
     elapsed = time.monotonic() - t0
-    elements = data.get("elements", [])
-    log.info("overpass_infrastructure_response", element_count=len(elements), elapsed_s=round(elapsed, 3), bbox=f"{west},{south},{east},{north}")
-    if not elements:
-        log.warning("overpass_no_infrastructure_returned", bbox=f"{west},{south},{east},{north}")
-        return {"roads": [], "water": [], "railways": []}
-    roads: list[Polygon] = []
-    water: list[Polygon] = []
-    railways: list[Polygon] = []
-    for el in elements:
-        tags = el.get("tags", {})
-        geom_nodes = el.get("geometry", [])
-        members = el.get("members", [])
-        # Handle ways (lines → buffer into polygons)
-        if el.get("type") == "way" and len(geom_nodes) >= 2:
-            try:
-                coords = [(node["lon"], node["lat"]) for node in geom_nodes]
-                if tags.get("natural") == "water" and len(coords) >= 4:
-                    poly = Polygon(coords)
-                    if poly.is_valid and poly.area > 0:
-                        water.append(poly)
-                        continue
-                line = LineString(coords)
-                if tags.get("highway"):
-                    roads.append(line.buffer(ROAD_BUFFER_DEG))
-                elif tags.get("waterway"):
-                    water.append(line.buffer(WATER_BUFFER_DEG))
-                elif tags.get("railway"):
-                    railways.append(line.buffer(RAIL_BUFFER_DEG))
-                else:
-                    continue
-            except Exception as e:
-                log.debug("infra_geom_parse_failed", element_type=el.get("type"), error=str(e))
-                continue
-        # Handle relations (multipolygon water bodies like lakes)
-        elif el.get("type") == "relation" and members:
-            for member in members:
-                if member.get("role") == "outer" and member.get("type") == "way":
-                    member_geom = member.get("geometry", [])
-                    if len(member_geom) >= 4:
-                        try:
-                            coords = [(n["lon"], n["lat"]) for n in member_geom]
-                            poly = Polygon(coords)
-                            if poly.is_valid and poly.area > 0:
-                                water.append(poly)
-                        except Exception as e:
-                            log.debug("infra_relation_geom_parse_failed", element_id=el.get("id"), error=str(e))
-                            continue
-    log.info("infrastructure_fetched", roads=len(roads), water=len(water), railways=len(railways), bbox=f"{west},{south},{east},{north}")
+    roads = _buffer_lines(raw_roads, ROAD_BUFFER_DEG) if raw_roads else []
+    water = _buffer_lines(raw_water, WATER_BUFFER_DEG) if raw_water else []
+    railways = _buffer_lines(raw_railways, RAIL_BUFFER_DEG) if raw_railways else []
+    log.info("infrastructure_fetched", roads=len(roads), water=len(water), railways=len(railways), bbox=f"{west},{south},{east},{north}", elapsed_s=round(elapsed, 3))
     return {"roads": roads, "water": water, "railways": railways}
 
 
@@ -100,12 +56,10 @@ def filter_candidates_by_infrastructure(
     west: float, south: float, east: float, north: float,
 ) -> list[tuple]:
     """Remove candidates on roads, water, or railways. Springs exempt from water filter.
-
     Args:
         candidates: list of Candidate objects
         wgs84_coords: list of (lon, lat) tuples matching candidates
         west/south/east/north: WGS84 bounding box
-
     Returns:
         list of (candidate, lon, lat) tuples that passed all filters
     """

@@ -1,0 +1,6 @@
+{
+    "include_tags": ["highway"],
+    "linear_tags": true,
+    "area_tags": false,
+    "format_options": {}
+}

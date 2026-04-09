@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     # Processing cache — set to false to skip .processed marker files (debug mode)
     enable_processing_cache: bool = True
 
+    # OSM offline data (Geofabrik PBF + osmium)
+    osm_cache_ttl_days: int = 30
+
     @property
     def raw_dir(self) -> Path:
         return self.data_dir / "raw"
