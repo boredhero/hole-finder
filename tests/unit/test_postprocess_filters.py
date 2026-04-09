@@ -79,8 +79,8 @@ class TestCemeteryExclusion:
 class TestInfrastructureFilter:
     """Tests for filter_candidates_by_infrastructure."""
 
-    def _mock_infra(self, roads=None, water=None, railways=None):
-        return {"roads": roads or [], "water": water or [], "railways": railways or []}
+    def _mock_infra(self, roads=None, water=None, railways=None, landuse=None):
+        return {"roads": roads or [], "water": water or [], "railways": railways or [], "landuse": landuse or []}
 
     def test_candidate_on_road_removed(self):
         from hole_finder.detection.postprocess.infrastructure_filter import filter_candidates_by_infrastructure
