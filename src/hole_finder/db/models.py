@@ -248,7 +248,7 @@ class PassResult(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     detection_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("detections.id")
+        UUID(as_uuid=True), ForeignKey("detections.id", ondelete="CASCADE")
     )
     pass_name: Mapped[str] = mapped_column(String(100))
     raw_score: Mapped[float] = mapped_column(Float)
@@ -267,7 +267,7 @@ class ValidationEvent(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     detection_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("detections.id")
+        UUID(as_uuid=True), ForeignKey("detections.id", ondelete="CASCADE")
     )
     verdict: Mapped[ValidationVerdict] = mapped_column(Enum(ValidationVerdict))
     notes: Mapped[str | None] = mapped_column(Text)
@@ -287,7 +287,7 @@ class Comment(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     detection_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("detections.id")
+        UUID(as_uuid=True), ForeignKey("detections.id", ondelete="CASCADE")
     )
     text: Mapped[str] = mapped_column(Text)
     author: Mapped[str | None] = mapped_column(String(100))
@@ -307,7 +307,7 @@ class SavedDetection(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     detection_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("detections.id")
+        UUID(as_uuid=True), ForeignKey("detections.id", ondelete="CASCADE")
     )
     label: Mapped[str | None] = mapped_column(String(255))
     color: Mapped[str | None] = mapped_column(String(7))  # hex color
