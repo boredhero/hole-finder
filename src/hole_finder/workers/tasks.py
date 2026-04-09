@@ -412,7 +412,7 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
         from pyproj import Transformer
         from shapely.geometry import Point
 
-        from hole_finder.db.models import Detection
+        from hole_finder.db.models import Detection, PassResult
         from hole_finder.db.models import FeatureType as DBFeatureType
         from hole_finder.detection.runner import PassRunner
 
@@ -587,11 +587,13 @@ def run_full_pipeline(self, job_id: str, pass_config: str, bbox_geojson: dict):
                                 area_m2=c.morphometrics.get("area_m2"),
                                 circularity=c.morphometrics.get("circularity"),
                                 wall_slope_deg=c.morphometrics.get("wall_slope_deg"),
-                                source_passes=c.metadata.get("source_passes") if c.metadata else None,
-                                morphometrics={k: float(v) if isinstance(v, (int, float)) else v
-                                               for k, v in c.morphometrics.items()},
+                                source_passes=c.metadata if c.metadata else None,
+                                morphometrics={k: round(float(v), 4) if isinstance(v, (int, float)) else v for k, v in c.morphometrics.items()},
                             )
                             session.add(det)
+                            await session.flush()
+                            for pp in (c.metadata or {}).get("per_pass", []):
+                                session.add(PassResult(detection_id=det.id, pass_name=pp["pass_name"], raw_score=pp["score"], parameters=pp.get("morphometrics")))
                             stored += 1
                         await session.commit()
                     return stored

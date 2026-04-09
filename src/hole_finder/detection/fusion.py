@@ -101,6 +101,7 @@ class ResultFuser:
         feature_type_votes: dict[FeatureType, float] = defaultdict(float)
         outlines = []
 
+        per_pass_data: list[dict] = []
         for pass_name, cand in cluster:
             pass_names.add(pass_name)
             weight = self.weights.get(pass_name, 1.0)
@@ -108,14 +109,12 @@ class ResultFuser:
             total_weight += weight
             lats.append(cand.geometry.y)
             lons.append(cand.geometry.x)
-
             for key, val in cand.morphometrics.items():
                 all_morphometrics[key].append(val)
-
             feature_type_votes[cand.feature_type] += weight * cand.score
-
             if cand.outline is not None:
                 outlines.append(cand.outline)
+            per_pass_data.append({"pass_name": pass_name, "score": round(cand.score, 4), "feature_type": str(cand.feature_type), "morphometrics": {k: round(float(v), 4) if isinstance(v, (int, float)) else v for k, v in cand.morphometrics.items()}})
 
         # Weighted confidence
         confidence = sum(weighted_scores) / total_weight if total_weight > 0 else 0.0
@@ -153,5 +152,6 @@ class ResultFuser:
             metadata={
                 "source_passes": sorted(pass_names),
                 "num_passes": len(pass_names),
+                "per_pass": per_pass_data,
             },
         )
