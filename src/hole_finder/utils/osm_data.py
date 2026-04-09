@@ -28,10 +28,16 @@ CACHE_DIR = settings.data_dir / "cache" / "osm"
 CACHE_TTL_S = 30 * 86400  # 30 days
 GRID_SIZE = 0.05  # ~5km grid cells for cache key quantization
 OSMIUM_CONFIGS_DIR = Path("/app/configs/osmium") if Path("/app/configs/osmium").exists() else Path(__file__).resolve().parent.parent.parent.parent / "configs" / "osmium"
-# Highway values we care about (must match the old Overpass query)
-HIGHWAY_VALUES = {"motorway", "trunk", "primary", "secondary", "tertiary", "motorway_link", "trunk_link", "primary_link", "secondary_link"}
+# Highway values — ALL paved/graded roads, not just major highways.
+# Residential streets, service roads, and parking aisles cause the most false positives.
+HIGHWAY_VALUES = {"motorway", "trunk", "primary", "secondary", "tertiary", "residential", "service", "unclassified", "living_street", "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link"}
 WATERWAY_VALUES = {"river", "stream", "canal", "drain", "ditch"}
 RAILWAY_VALUES = {"rail", "light_rail"}
+# Landuse/amenity/leisure values that produce false positives in LiDAR
+EXCLUDE_LANDUSE = {"industrial", "commercial", "retail", "construction", "quarry", "landfill"}
+EXCLUDE_AMENITY = {"parking"}
+EXCLUDE_LEISURE = {"golf_course", "pitch", "track", "sports_centre", "stadium"}
+EXCLUDE_MANMADE = {"bridge", "pier", "breakwater", "embankment"}
 
 
 def _grid_cell(west: float, south: float, east: float, north: float) -> str:
@@ -188,3 +194,8 @@ def get_water_geometries(west: float, south: float, east: float, north: float) -
 def get_railway_geometries(west: float, south: float, east: float, north: float) -> list:
     """Get railway linestrings from offline OSM data."""
     return _get_geometries(west, south, east, north, "railways", "railways", tag_filter={"railway": RAILWAY_VALUES})
+
+
+def get_landuse_polygons(west: float, south: float, east: float, north: float) -> list:
+    """Get landuse/amenity/leisure polygons that produce false positives (parking, industrial, golf, etc)."""
+    return _get_geometries(west, south, east, north, "landuse", "landuse", tag_filter={"landuse": EXCLUDE_LANDUSE, "amenity": EXCLUDE_AMENITY, "leisure": EXCLUDE_LEISURE, "man_made": EXCLUDE_MANMADE})

@@ -1,0 +1,6 @@
+{
+    "include_tags": ["landuse", "amenity", "leisure", "man_made"],
+    "linear_tags": false,
+    "area_tags": true,
+    "format_options": {}
+}
