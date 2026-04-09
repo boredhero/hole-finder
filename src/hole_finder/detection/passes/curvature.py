@@ -36,7 +36,8 @@ class CurvaturePass(DetectionPass):
         config = input_data.config
         threshold = config.get("threshold", -0.02)
         min_area_pixels = config.get("min_area_pixels", 4)
-        log.debug("curvature_pass_thresholds", threshold=threshold, min_area_pixels=min_area_pixels)
+        max_area_pixels = config.get("max_area_pixels", 0)
+        log.debug("curvature_pass_thresholds", threshold=threshold, min_area_pixels=min_area_pixels, max_area_pixels=max_area_pixels)
         resolution = abs(input_data.transform[0])
         cell_area = resolution * resolution
         curv = input_data.derivatives.get("profile_curvature")
@@ -60,6 +61,8 @@ class CurvaturePass(DetectionPass):
         min_curvs = stats["min_vals"]
         centroids = stats["centroids"]
         valid = areas_px >= min_area_pixels
+        if max_area_pixels > 0:
+            valid = valid & (areas_px <= max_area_pixels)
         valid_count = int(np.sum(valid))
         log.debug("curvature_pass_filtering", raw_features=num_features, survived_area_filter=valid_count)
         valid_set = set(np.flatnonzero(valid).tolist())

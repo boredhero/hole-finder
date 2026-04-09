@@ -36,7 +36,8 @@ class TPIPass(DetectionPass):
         config = input_data.config
         threshold = config.get("threshold", -1.0)
         min_area_pixels = config.get("min_area_pixels", 4)
-        log.debug("tpi_pass_config", threshold=threshold, min_area_pixels=min_area_pixels)
+        max_area_pixels = config.get("max_area_pixels", 0)
+        log.debug("tpi_pass_config", threshold=threshold, min_area_pixels=min_area_pixels, max_area_pixels=max_area_pixels)
         resolution = abs(input_data.transform[0])
         cell_area = resolution * resolution
         tpi = input_data.derivatives.get("tpi")
@@ -62,6 +63,8 @@ class TPIPass(DetectionPass):
         min_tpis = stats["min_vals"]
         centroids = stats["centroids"]
         valid = areas_px >= min_area_pixels
+        if max_area_pixels > 0:
+            valid = valid & (areas_px <= max_area_pixels)
         valid_count = int(np.sum(valid))
         log.debug("tpi_pass_filtering", raw_features=num_features, survived_area_filter=valid_count)
         valid_set = set(np.flatnonzero(valid).tolist())

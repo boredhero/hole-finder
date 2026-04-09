@@ -204,7 +204,7 @@ class PassRunner:
         # quality filters. Use looser thresholds than post-fusion (score 0.15 vs 0.3)
         # because multi-pass fusion bonus (1.2x) can boost borderline candidates.
         pre_count = len(all_candidates)
-        all_candidates = [(pn, c) for pn, c in all_candidates if c.score > 0.15 and c.morphometrics.get("area_m2", 0) > 10 and c.morphometrics.get("depth_m", c.morphometrics.get("lrm_anomaly_m", 0)) < 200]
+        all_candidates = [(pn, c) for pn, c in all_candidates if c.score > 0.15 and c.morphometrics.get("area_m2", 0) > 20 and c.morphometrics.get("depth_m", c.morphometrics.get("lrm_anomaly_m", 0)) < 200]
         log.info("pre_fusion_filter", before=pre_count, after=len(all_candidates), removed=pre_count - len(all_candidates))
 
         # Fusion timing

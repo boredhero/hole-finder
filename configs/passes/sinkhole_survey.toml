@@ -22,29 +22,34 @@ point_density = 2.0
 morphometric_filter = 0.0
 
 [passes.fill_difference]
-min_depth_m = 0.3
-min_area_m2 = 20
+min_depth_m = 0.5          # Telbisz (2024): 0.5m optimal for 1m LiDAR DEMs
+min_area_m2 = 25
 max_area_m2 = 50000
 
 [passes.local_relief_model]
 kernel_sizes = [50, 100, 200]
-threshold_m = 0.2
-min_area_m2 = 10
+threshold_m = 0.4          # Hesse (2010): 0.5m recommended; 0.4 = moderate
+min_area_m2 = 25
 max_area_m2 = 50000
 
 [passes.tpi]
-threshold = -0.5
+threshold = -1.0           # Weiss (2001): -1.0 SD = valley/depression class
 radius_m = 15
+min_area_pixels = 25
+max_area_pixels = 5000     # cap huge artifacts (~5000m² at 1m res)
 
 [passes.curvature]
 type = "total"
-threshold = -0.005
+threshold = -0.03          # literature: -0.02 to -0.05 for meaningful concavity
+min_area_pixels = 25
+max_area_pixels = 5000
 
 [passes.sky_view_factor]
 radius_m = 30
 n_directions = 16
-threshold = 0.8
-min_area_pixels = 2
+threshold = 0.65           # Zakšek/Kokalj (2011): 0.65 for enclosed depressions
+min_area_pixels = 25
+max_area_pixels = 5000
 
 [passes.point_density]
 cell_size_m = 2.0
