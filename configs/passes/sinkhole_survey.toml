@@ -58,4 +58,4 @@ z_score_threshold = -2.0
 [passes.morphometric_filter]
 min_depth_m = 0.3
 max_area_m2 = 50000
-min_circularity = 0.15
+min_circularity = 0.3  # Wu & Lane 2017: < 0.3 reliably indicates linear/anthropogenic
