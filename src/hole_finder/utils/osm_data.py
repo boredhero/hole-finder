@@ -13,6 +13,7 @@ import json
 import math
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -21,6 +22,14 @@ from shapely.geometry import LineString, Polygon
 
 from hole_finder.config import settings
 from hole_finder.utils.log_manager import log
+
+# Serialize `osmium extract` calls. Each extract reads from the 12 GB US PBF;
+# parallel extracts (one per tile × {buildings,roads,water,rail,landuse}) thrash
+# disk I/O on the same large file and many cross the 180s timeout. A single
+# extract takes ~24s on this hardware, so serializing across the worker is
+# strictly faster than the previous parallel-and-time-out behavior. Export is
+# NOT serialized — it operates on tiny per-tile clip files with negligible I/O.
+_OSMIUM_EXTRACT_LOCK = threading.Semaphore(1)
 
 GEOFABRIK_US_URL = "https://download.geofabrik.de/north-america/us-latest.osm.pbf"
 PBF_PATH = settings.data_dir / "osm" / "us-latest.osm.pbf"
@@ -102,19 +111,20 @@ def _extract_geojson(west: float, south: float, east: float, north: float, confi
     with tempfile.TemporaryDirectory(prefix="osm_") as tmpdir:
         clip_path = Path(tmpdir) / "clip.osm.pbf"
         geojson_path = Path(tmpdir) / "features.geojson"
-        # Step 1: Extract bbox from PBF
+        # Step 1: Extract bbox from PBF (serialized — see _OSMIUM_EXTRACT_LOCK).
         extract_cmd = ["osmium", "extract", "--bbox", f"{west},{south},{east},{north}", "--strategy=smart", "--overwrite", "-o", str(clip_path), str(PBF_PATH)]
-        try:
-            result = subprocess.run(extract_cmd, capture_output=True, text=True, timeout=180)
-            if result.returncode != 0:
-                log.error("osmium_extract_failed", returncode=result.returncode, stderr=result.stderr[:500])
+        with _OSMIUM_EXTRACT_LOCK:
+            try:
+                result = subprocess.run(extract_cmd, capture_output=True, text=True, timeout=180)
+                if result.returncode != 0:
+                    log.error("osmium_extract_failed", returncode=result.returncode, stderr=result.stderr[:500])
+                    return None
+            except subprocess.TimeoutExpired:
+                log.error("osmium_extract_timeout", bbox=f"{west},{south},{east},{north}", timeout_s=180)
                 return None
-        except subprocess.TimeoutExpired:
-            log.error("osmium_extract_timeout", bbox=f"{west},{south},{east},{north}", timeout_s=180)
-            return None
-        except FileNotFoundError:
-            log.error("osmium_not_installed", hint="apt-get install osmium-tool")
-            return None
+            except FileNotFoundError:
+                log.error("osmium_not_installed", hint="apt-get install osmium-tool")
+                return None
         # Step 2: Export to GeoJSON with tag filter
         export_cmd = ["osmium", "export", "--config", str(config_path), "--overwrite", "-o", str(geojson_path), "-f", "geojson", str(clip_path)]
         try:

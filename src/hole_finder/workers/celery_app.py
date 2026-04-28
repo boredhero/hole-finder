@@ -30,8 +30,8 @@ app.config_from_object(
             "hole_finder.workers.tasks.run_detection": {"queue": "detect"},
             "hole_finder.workers.tasks.run_ml_pass": {"queue": "gpu"},
         },
-        "task_time_limit": 3600,
-        "task_soft_time_limit": 3000,
+        "task_time_limit": 7200,
+        "task_soft_time_limit": 6600,
     }
 )
 
@@ -45,4 +45,4 @@ app.conf.beat_schedule = {
     },
 }
 
-log.info("celery_app_configured", queues=["ingest", "process", "detect", "gpu"], task_time_limit=3600, beat_tasks=list(app.conf.beat_schedule.keys()))
+log.info("celery_app_configured", queues=["ingest", "process", "detect", "gpu"], task_time_limit=7200, beat_tasks=list(app.conf.beat_schedule.keys()))
